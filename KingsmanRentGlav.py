@@ -2,7 +2,6 @@ import asyncio
 import uuid
 import re
 import html
-import os
 import json
 from datetime import datetime, timedelta
 import gspread
@@ -13,27 +12,16 @@ from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 )
 
-# 🔧 НАСТРОЙКИ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
-BOT_TOKEN = os.getenv('BOT_TOKEN', "8148697332:AAGy6r-GNzqVYabKCQIlfQI-gCkbelQucFM")
-GROUP_ID = int(os.getenv('GROUP_ID', "-1002773883024"))
-TOPIC_ORDERS = int(os.getenv('TOPIC_ORDERS', "81003"))
-TOPIC_SUPPORT = int(os.getenv('TOPIC_SUPPORT', "81451"))
-ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', "841285005").split(',')]
-SPREADSHEET_NAME = os.getenv('SPREADSHEET_NAME', 'Kingsman Rent Orders')
+# Импортируем конфигурацию
+from config import BOT_TOKEN, GROUP_ID, TOPIC_ORDERS, TOPIC_SUPPORT, ADMIN_IDS, SCOPES, SPREADSHEET_NAME
+from service_account_loader import load_service_account
 
-# 🔐 GOOGLE SHEETS ДАННЫЕ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
-SERVICE_ACCOUNT_JSON = os.getenv('SERVICE_ACCOUNT_JSON')
-
-# Сотрудники будут загружаться из Google Sheets
-STAFF_MEMBERS = {}
-
+# Инициализация бота
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive',
-]
+# Сотрудники будут загружаться из Google Sheets
+STAFF_MEMBERS = {}
 
 # Глобальные переменные
 creds = None
@@ -49,40 +37,14 @@ support_requests = []
 order_confirmations = {}  # Для хранения подтверждений
 staff_management_data = {}  # Для управления сотрудниками
 
-
 # --- Инициализация Google Sheets ---
 def init_google_sheets():
     """Инициализация Google Sheets"""
     global creds, gc, worksheet_orders, worksheet_assignments, worksheet_staff, sheets_enabled
     try:
-        # Пытаемся получить credentials из переменных окружения
-        if SERVICE_ACCOUNT_JSON:
-            # Для облачного деплоя - из переменной окружения
-            try:
-                # Пробуем распарсить JSON напрямую
-                creds_info = json.loads(SERVICE_ACCOUNT_JSON)
-            except json.JSONDecodeError:
-                # Если не получается, возможно JSON экранирован как строка
-                try:
-                    # Убираем экранирование
-                    service_json = SERVICE_ACCOUNT_JSON.replace('\\n', '\n').replace('\\"', '"')
-                    # Если строка начинается и заканчивается кавычками, убираем их
-                    if service_json.startswith('"') and service_json.endswith('"'):
-                        service_json = service_json[1:-1]
-                    creds_info = json.loads(service_json)
-                except json.JSONDecodeError as e:
-                    print(f"❌ Ошибка парсинга SERVICE_ACCOUNT_JSON: {e}")
-                    print(f"❌ Первые 100 символов JSON: {SERVICE_ACCOUNT_JSON[:100]}...")
-                    return False
-            
-            creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
-            print("✅ Google Sheets инициализирована из переменных окружения")
-        else:
-            # Для локального запуска - из файла
-            SERVICE_ACCOUNT_FILE = 'service_account.json'
-            creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-            print("✅ Google Sheets инициализирована из файла")
-        
+        # Загружаем service account из переменной окружения
+        service_account_file = load_service_account()
+        creds = Credentials.from_service_account_file(service_account_file, scopes=SCOPES)
         gc = gspread.authorize(creds)
 
         # Открываем таблицу
@@ -1232,3 +1194,4 @@ if __name__ == "__main__":
         print("❌ Бот остановлен пользователем")
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
+
