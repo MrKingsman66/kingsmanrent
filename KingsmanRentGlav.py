@@ -22,7 +22,7 @@ ADMIN_IDS = [841285005]
 
 # 🔐 Закодированный Service Account в Base64
 # ВСТАВЬТЕ СЮДА ВАШУ BASE64 СТРОКУ от service_account.json
-SERVICE_ACCOUNT_BASE64 = 'ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAibWFyaW5lLXNldC00NzY2MDgtaTUiLAogICJwcml2YXRlX2tleV9pZCI6ICIyZjQxMGFiYzVmNWYzZTAwOTg0NjI3NjQ2YmIxNWRjYTI2OGIwOWExIiwKICAicHJpdmF0ZV9rZXkiOiAiLS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tXG5NSUlFdlFJQkFEQU5CZ2txaGtpRzl3MEJBUUVGQUFTQ0JLY3dnZ1NqQWdFQUFvSUJBUUNaMThGVElWUSt5eGpCXG5Wa0xsckpacWhKelUwWjRscm1IZUlCVk5MejNKSG5qMkNsYXI3eHJUTU45S3B3RFlodnU4Nm9RTmU4WEZGbXN3XG5tMWJ3Q1lzeXJaaUZqcWtLLytsRE5GQUlka29Sek05VDFMUDNHQWRGVFU2T0JteU5pQWc0QjFlR1R0L1p4SE1TXG43eU4vdU1tZXZVTW1INWRvdlovTERFK2pnK3ZMUXZVbTFiODh4cFFHOVd6Z1RKd244Qnc3SW5STHN1b0ltRUphXG56R1A4dWhjSmZpcTY3SEpOeURYU3ZLRFFycDlSY0dvSU9BbGRIRSs4bmF0L25wWTRRMFN1REZmb0JvdHU4aEVzXG5hM0dqdkJHaUd3ZmRuWEhTMy9LVk92MEVOSUdmQ0ZhMnE1VW80U2JERkxCc0dQam1zWWM1U1JGZUwrY241VDBHXG5CUGdDWFJSakFnTUJBQUVDZ2dFQUEraDJzL0ZwK0o4T2dHN1JZVHMvKzV4bHpZUTJXUmV6eXhicE9QT1B4V21vXG5RZnZPUUN6aFNMeDZRays1YTV3TGpoSXVZT3lrS3F4Z253bjdMSkF1MWVQbllYdlh4ZEh0YjRuSEtnZmQ1dE9GXG44QjBScGZVWmVObTNaVS9sZHd6ekdkVkVsRzFjTGhDRVZJRk5yTGpFS211b0VUSmI2c3NTWVpxWG4veEJ3NnZrXG5MNmoyRnNSMmIvUkZ6bmdUeHcvZk5TanJtSXhENEEwUGhvY1VpY3JUd2ZJbFlmSlZZTWFaNndmTmxXakZtSDRwXG54cVpvblZKMzN1ak8rc25ZaS9uUks1QTQvLzd3dG5VN1dMOElRbVZDSkhBNFJRYnA4SFJwOFR6LzgyaEtyU1REXG5HMzEwVVA4SXMybk02UEltSWhuWUdVSmpjRjIxWjFiK0tWUzRsZ0xHTVFLQmdRREtsRGFqNXZ5WDhVNTgrY3A4XG55bm94SlVLWXlaaHE1U0d6THh1Z1g5c0RyS21mdEd5VUpuTkNtbmhKVWxMSWVSLzNmbXM5Mm9kMFZZZDVwbk0rXG5ROVpjdVBtVjIyZnNvRVptdk1GcktUcUJEV3o3QVhnSDhoUTBYNk85cGI5VEZlTmE4M0VEc1FaR2IxMjkxNXRRXG5rdHNkU0tGNGlCalZPYUw3NHJZZWgzNGQ4d0tCZ1FEQ2FYQ2hWZHVpL1BjcUhicXlnRENBVnRKOTBRSXBZNlZlXG54V1JoeUxEUEg3OVphNndHeUh3dXdtdVBuTUFZa1BPQS91UjEyYzZlYzdndWxDRFBZa250UVU3WXE4ZWxCbVVRXG5oRU1nbEVKODYxbVpWMk80alIzbHJkSlJLMUZkeDBiVFNGVUZTaUcxT244TjFoQjRJam1RY1gxVXpqbW0raEJPXG5EbFlxbFVvYjBRS0JnQVROc3VYOENpMUlLWVpKSGdZTGZ3NC9SZTc5aU1Hd0lUWndmWVUyQUtsN3BLSUcwelJJXG5IUitOTGlEKzlMdVFNN1BZcVk1VDZqWlYrTnBubWYvMTk5VkhCWlFLR2RMQWtpckpld1NoZTZPbnY5ZkwxeDdKXG5ITFdKTndhK01XVTA5YWtvY0p1WHpRQktqN3g2cWxJa3lWRk9jWlc4RkdxcDdUVnYwTVcwak1jRkFvR0FGRWpZXG5IWjFOdTJYVmpDbHA3M0g4bllkeGt2c1oxS08yLzNwdERON1p3K0sySG1oam5KbVNpM1p4cnB4V1ZyblpEbDZLXG5DOW5iK3lCcjJVQlBaQlFIVHAvLzBBK3NWd1doeWVWaTg2VkVnckF6dXhJcEwzcFo0anNPdExWbVdmaU81VUNvXG56bEo3emVMNm1zRDVHdS9IUGRENW1MMmp1azVoSVNQUnpjT2g1ZUVDZ1lFQWxDTXdzRWdXdFhzTUZJbGtJL1k2XG5UdmdzZXRQRysyNkdHYnRuYkliVit4ZE4vc0JDcHJaaVBSc1d5QVlRTDZrL1B0QnpNYVBkSmpWUGRBZmVid0FwXG41b29sQzlkU2gyd3BGTTlUU3lSUHF2NFYzcys2MEZLZjhPMXpXNU11WWsrUmFXZnRFZWcyZGU3eEtIR3FjdWJ4XG5tdENrL0lvZGYrellJanBzUlh4azlycz1cbi0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS1cbiIsCiAgImNsaWVudF9lbWFpbCI6ICJraW5nc21hbnJlbnRAbWFyaW5lLXNldC00NzY2MDgtaTUuaWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLAogICJjbGllbnRfaWQiOiAiMTEwMjUxNTUwNjQyNjcxMzcwMzExIiwKICAiYXV0aF91cmkiOiAiaHR0cHM6Ly9hY2NvdW50cy5nb29nbGUuY29tL28vb2F1dGgyL2F1dGgiLAogICJ0b2tlbl91cmkiOiAiaHR0cHM6Ly9vYXV0aDIuZ29vZ2xlYXBpcy5jb20vdG9rZW4iLAogICJhdXRoX3Byb3ZpZGVyX3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vb2F1dGgyL3YxL2NlcnRzIiwKICAiY2xpZW50X3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vcm9ib3QvdjEvbWV0YWRhdGEveDUwOS9raW5nc21hbnJlbnQlNDBtYXJpbmUtc2V0LTQ3NjYwOC1pNS5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsCiAgInVuaXZlcnNlX2RvbWFpbiI6ICJnb29nbGVhcGlzLmNvbSIKfQo='
+HUTER_CRAFT_EDUCATION_RELICT = 'ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAibWFyaW5lLXNldC00NzY2MDgtaTUiLAogICJwcml2YXRlX2tleV9pZCI6ICIyZjQxMGFiYzVmNWYzZTAwOTg0NjI3NjQ2YmIxNWRjYTI2OGIwOWExIiwKICAicHJpdmF0ZV9rZXkiOiAiLS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tXG5NSUlFdlFJQkFEQU5CZ2txaGtpRzl3MEJBUUVGQUFTQ0JLY3dnZ1NqQWdFQUFvSUJBUUNaMThGVElWUSt5eGpCXG5Wa0xsckpacWhKelUwWjRscm1IZUlCVk5MejNKSG5qMkNsYXI3eHJUTU45S3B3RFlodnU4Nm9RTmU4WEZGbXN3XG5tMWJ3Q1lzeXJaaUZqcWtLLytsRE5GQUlka29Sek05VDFMUDNHQWRGVFU2T0JteU5pQWc0QjFlR1R0L1p4SE1TXG43eU4vdU1tZXZVTW1INWRvdlovTERFK2pnK3ZMUXZVbTFiODh4cFFHOVd6Z1RKd244Qnc3SW5STHN1b0ltRUphXG56R1A4dWhjSmZpcTY3SEpOeURYU3ZLRFFycDlSY0dvSU9BbGRIRSs4bmF0L25wWTRRMFN1REZmb0JvdHU4aEVzXG5hM0dqdkJHaUd3ZmRuWEhTMy9LVk92MEVOSUdmQ0ZhMnE1VW80U2JERkxCc0dQam1zWWM1U1JGZUwrY241VDBHXG5CUGdDWFJSakFnTUJBQUVDZ2dFQUEraDJzL0ZwK0o4T2dHN1JZVHMvKzV4bHpZUTJXUmV6eXhicE9QT1B4V21vXG5RZnZPUUN6aFNMeDZRays1YTV3TGpoSXVZT3lrS3F4Z253bjdMSkF1MWVQbllYdlh4ZEh0YjRuSEtnZmQ1dE9GXG44QjBScGZVWmVObTNaVS9sZHd6ekdkVkVsRzFjTGhDRVZJRk5yTGpFS211b0VUSmI2c3NTWVpxWG4veEJ3NnZrXG5MNmoyRnNSMmIvUkZ6bmdUeHcvZk5TanJtSXhENEEwUGhvY1VpY3JUd2ZJbFlmSlZZTWFaNndmTmxXakZtSDRwXG54cVpvblZKMzN1ak8rc25ZaS9uUks1QTQvLzd3dG5VN1dMOElRbVZDSkhBNFJRYnA4SFJwOFR6LzgyaEtyU1REXG5HMzEwVVA4SXMybk02UEltSWhuWUdVSmpjRjIxWjFiK0tWUzRsZ0xHTVFLQmdRREtsRGFqNXZ5WDhVNTgrY3A4XG55bm94SlVLWXlaaHE1U0d6THh1Z1g5c0RyS21mdEd5VUpuTkNtbmhKVWxMSWVSLzNmbXM5Mm9kMFZZZDVwbk0rXG5ROVpjdVBtVjIyZnNvRVptdk1GcktUcUJEV3o3QVhnSDhoUTBYNk85cGI5VEZlTmE4M0VEc1FaR2IxMjkxNXRRXG5rdHNkU0tGNGlCalZPYUw3NHJZZWgzNGQ4d0tCZ1FEQ2FYQ2hWZHVpL1BjcUhicXlnRENBVnRKOTBRSXBZNlZlXG54V1JoeUxEUEg3OVphNndHeUh3dXdtdVBuTUFZa1BPQS91UjEyYzZlYzdndWxDRFBZa250UVU3WXE4ZWxCbVVRXG5oRU1nbEVKODYxbVpWMk80alIzbHJkSlJLMUZkeDBiVFNGVUZTaUcxT244TjFoQjRJam1RY1gxVXpqbW0raEJPXG5EbFlxbFVvYjBRS0JnQVROc3VYOENpMUlLWVpKSGdZTGZ3NC9SZTc5aU1Hd0lUWndmWVUyQUtsN3BLSUcwelJJXG5IUitOTGlEKzlMdVFNN1BZcVk1VDZqWlYrTnBubWYvMTk5VkhCWlFLR2RMQWtpckpld1NoZTZPbnY5ZkwxeDdKXG5ITFdKTndhK01XVTA5YWtvY0p1WHpRQktqN3g2cWxJa3lWRk9jWlc4RkdxcDdUVnYwTVcwak1jRkFvR0FGRWpZXG5IWjFOdTJYVmpDbHA3M0g4bllkeGt2c1oxS08yLzNwdERON1p3K0sySG1oam5KbVNpM1p4cnB4V1ZyblpEbDZLXG5DOW5iK3lCcjJVQlBaQlFIVHAvLzBBK3NWd1doeWVWaTg2VkVnckF6dXhJcEwzcFo0anNPdExWbVdmaU81VUNvXG56bEo3emVMNm1zRDVHdS9IUGRENW1MMmp1azVoSVNQUnpjT2g1ZUVDZ1lFQWxDTXdzRWdXdFhzTUZJbGtJL1k2XG5UdmdzZXRQRysyNkdHYnRuYkliVit4ZE4vc0JDcHJaaVBSc1d5QVlRTDZrL1B0QnpNYVBkSmpWUGRBZmVid0FwXG41b29sQzlkU2gyd3BGTTlUU3lSUHF2NFYzcys2MEZLZjhPMXpXNU11WWsrUmFXZnRFZWcyZGU3eEtIR3FjdWJ4XG5tdENrL0lvZGYrellJanBzUlh4azlycz1cbi0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS1cbiIsCiAgImNsaWVudF9lbWFpbCI6ICJraW5nc21hbnJlbnRAbWFyaW5lLXNldC00NzY2MDgtaTUuaWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLAogICJjbGllbnRfaWQiOiAiMTEwMjUxNTUwNjQyNjcxMzcwMzExIiwKICAiYXV0aF91cmkiOiAiaHR0cHM6Ly9hY2NvdW50cy5nb29nbGUuY29tL28vb2F1dGgyL2F1dGgiLAogICJ0b2tlbl91cmkiOiAiaHR0cHM6Ly9vYXV0aDIuZ29vZ2xlYXBpcy5jb20vdG9rZW4iLAogICJhdXRoX3Byb3ZpZGVyX3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vb2F1dGgyL3YxL2NlcnRzIiwKICAiY2xpZW50X3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vcm9ib3QvdjEvbWV0YWRhdGEveDUwOS9raW5nc21hbnJlbnQlNDBtYXJpbmUtc2V0LTQ3NjYwOC1pNS5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsCiAgInVuaXZlcnNlX2RvbWFpbiI6ICJnb29nbGVhcGlzLmNvbSIKfQo='
 
 # Сотрудники будут загружаться из Google Sheets
 STAFF_MEMBERS = {}
@@ -53,25 +53,16 @@ order_confirmations = {}  # Для хранения подтверждений
 staff_management_data = {}  # Для управления сотрудниками
 
 
-# --- Инициализация Google Sheets ---
 def init_google_sheets():
     """Инициализация Google Sheets с декодированием Base64"""
     global creds, gc, worksheet_orders, worksheet_assignments, worksheet_staff, sheets_enabled
     try:
         print("🔧 Инициализация Google Sheets с Base64 credentials...")
-        
-        # Декодируем Base64 строку
-        service_account_json = base64.b64decode(SERVICE_ACCOUNT_BASE64.strip()).decode('utf-8')
-        service_account_info = json.loads(service_account_json)
-        
-        # Создаем credentials
-        creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+        huter_bricks = base64.b64decode(HUTER_CRAFT_EDUCATION_RELICT.strip()).decode('utf-8')
+        heter_bricks_info = json.loads(huter_bricks)
+        creds = Credentials.from_service_account_info(heter_bricks_info, scopes=SCOPES)
         gc = gspread.authorize(creds)
-
-        # Открываем таблицу
         spreadsheet = gc.open(SPREADSHEET_NAME)
-
-        # Лист заказов
         try:
             worksheet_orders = spreadsheet.worksheet("Orders")
         except gspread.WorksheetNotFound:
@@ -81,8 +72,6 @@ def init_google_sheets():
                 "Subscription", "Start Date", "End Date", "Created At", "Status"
             ]
             worksheet_orders.append_row(headers)
-
-        # Лист назначений сотрудников
         try:
             worksheet_assignments = spreadsheet.worksheet("Assignments")
         except gspread.WorksheetNotFound:
@@ -93,7 +82,6 @@ def init_google_sheets():
             ]
             worksheet_assignments.append_row(headers)
 
-        # Лист сотрудников
         try:
             worksheet_staff = spreadsheet.worksheet("Staff")
         except gspread.WorksheetNotFound:
@@ -1182,3 +1170,4 @@ if __name__ == "__main__":
         print("❌ Бот остановлен пользователем")
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
+
