@@ -1,10 +1,10 @@
-import os
-import json
-import base64
 import asyncio
 import uuid
 import re
 import html
+import os
+import json
+import base64
 from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
@@ -28,7 +28,6 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # --- Настройки Google Sheets ---
-SERVICE_ACCOUNT_ENV = 'GOOGLE_SERVICE_ACCOUNT_JSON'
 SPREADSHEET_NAME = 'Kingsman Rent Orders'
 
 SCOPES = [
@@ -53,34 +52,40 @@ staff_management_data = {}  # Для управления сотрудникам
 
 # --- Инициализация Google Sheets ---
 def init_google_sheets():
-    """Инициализация Google Sheets через переменные окружения"""
+    """Инициализация Google Sheets через Base64 переменную окружения"""
     global creds, gc, worksheet_orders, worksheet_assignments, worksheet_staff, sheets_enabled
     try:
-        # Получаем данные из переменной окружения
-        service_account_json = os.getenv(SERVICE_ACCOUNT_ENV)
+        # Пытаемся получить Base64 из переменной окружения
+        service_account_b64 = os.getenv('GOOGLE_SERVICE_ACCOUNT_BASE64')
         
-        if not service_account_json:
-            print(f"❌ {SERVICE_ACCOUNT_ENV} не найден в переменных окружения")
-            # Попробуем прочитать из файла для локальной разработки
-            try:
-                with open('service_account.json', 'r') as f:
-                    service_account_info = json.load(f)
-                print("✅ Загружен service_account.json из файла (для разработки)")
-            except FileNotFoundError:
-                print("❌ service_account.json также не найден")
-                return False
-        else:
-            # Парсим JSON из переменной окружения
+        if service_account_b64:
+            # Декодируем из Base64
+            print("🔧 Загрузка service account из переменной окружения (Base64)...")
+            service_account_json = base64.b64decode(service_account_b64).decode('utf-8')
             service_account_info = json.loads(service_account_json)
-            print("✅ Service account загружен из переменных окружения")
+            print("✅ Service account успешно декодирован из Base64")
+        else:
+            # Пробуем загрузить из локального файла (для разработки)
+            print("🔧 Переменная окружения не найдена, пробуем локальный файл...")
+            try:
+                with open('service_account.json', 'r', encoding='utf-8') as f:
+                    service_account_info = json.load(f)
+                print("✅ Service account загружен из локального файла")
+            except FileNotFoundError:
+                print("❌ service_account.json не найден и GOOGLE_SERVICE_ACCOUNT_BASE64 не установлен")
+                return False
+            except Exception as e:
+                print(f"❌ Ошибка чтения локального файла: {e}")
+                return False
         
         # Создаем credentials
         creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
         gc = gspread.authorize(creds)
 
-        # Остальной код остается без изменений
+        # Открываем таблицу
         spreadsheet = gc.open(SPREADSHEET_NAME)
 
+        # Лист заказов
         try:
             worksheet_orders = spreadsheet.worksheet("Orders")
         except gspread.WorksheetNotFound:
@@ -91,6 +96,7 @@ def init_google_sheets():
             ]
             worksheet_orders.append_row(headers)
 
+        # Лист назначений сотрудников
         try:
             worksheet_assignments = spreadsheet.worksheet("Assignments")
         except gspread.WorksheetNotFound:
@@ -101,6 +107,7 @@ def init_google_sheets():
             ]
             worksheet_assignments.append_row(headers)
 
+        # Лист сотрудников
         try:
             worksheet_staff = spreadsheet.worksheet("Staff")
         except gspread.WorksheetNotFound:
@@ -110,6 +117,7 @@ def init_google_sheets():
                 "Added At", "Added By", "Status"
             ]
             worksheet_staff.append_row(headers)
+            # Добавляем главного администратора по умолчанию
             worksheet_staff.append_row([
                 841285005, "Denis_Kingsman", "admin", "Администратор",
                 datetime.now().strftime("%d.%m.%Y %H:%M"), "system", "active"
@@ -122,6 +130,24 @@ def init_google_sheets():
     except Exception as e:
         print(f"❌ Ошибка инициализации Google Sheets: {e}")
         return False
+
+
+# --- Утилита для создания Base64 строки из файла ---
+def create_base64_from_file():
+    """Вспомогательная функция для создания Base64 строки из service_account.json"""
+    try:
+        with open('service_account.json', 'rb') as f:
+            encoded = base64.b64encode(f.read()).decode('utf-8')
+            print("\n" + "="*50)
+            print("BASE64 STRING (скопируйте это в переменную окружения):")
+            print("="*50)
+            print(encoded)
+            print("="*50)
+            print("Длина строки:", len(encoded))
+            return encoded
+    except FileNotFoundError:
+        print("❌ service_account.json не найден")
+        return None
 
 
 # --- Загрузка сотрудников из Google Sheets ---
@@ -497,8 +523,6 @@ def staff_actions_keyboard(order_id) -> InlineKeyboardMarkup:
             callback_data=f"take_order_{order_id}"
         )]
     ])
-
-
 
 
 # --- Команды бота ---
@@ -1152,6 +1176,28 @@ async def cmd_debug_orders(message: Message):
     )
 
 
+@dp.message(Command("encode_service_account"))
+async def cmd_encode_service_account(message: Message):
+    """Команда для кодирования service_account.json в Base64 (только для админов)"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Эта команда только для администраторов.")
+        return
+
+    encoded = create_base64_from_file()
+    if encoded:
+        # Отправляем частями если строка слишком длинная
+        if len(encoded) > 4000:
+            part1 = encoded[:4000]
+            part2 = encoded[4000:]
+            await message.answer(f"Base64 Part 1:\n`{part1}`", parse_mode="MarkdownV2")
+            await message.answer(f"Base64 Part 2:\n`{part2}`", parse_mode="MarkdownV2")
+        else:
+            await message.answer(f"Base64:\n`{encoded}`", parse_mode="MarkdownV2")
+        await message.answer("✅ Скопируйте эту строку в переменную окружения GOOGLE_SERVICE_ACCOUNT_BASE64")
+    else:
+        await message.answer("❌ Не удалось закодировать service_account.json")
+
+
 # --- Запуск ---
 async def main():
     print("🤖 Запуск бота он просыпается уже...")
@@ -1179,6 +1225,8 @@ async def main():
     print("   /set_position - изменить должность")
     print("   /remove_staff - удалить сотрудника")
     print("   /list_staff - список сотрудников")
+    print("🔧 Утилиты:")
+    print("   /encode_service_account - получить Base64 строку для service_account.json")
 
     await dp.start_polling(bot)
 
