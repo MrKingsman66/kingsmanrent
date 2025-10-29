@@ -2,6 +2,8 @@ import asyncio
 import uuid
 import re
 import html
+import os
+import json
 from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
@@ -11,22 +13,22 @@ from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 )
 
-# 🔧 Настройки
-BOT_TOKEN = "8148697332:AAGy6r-GNzqVYabKCQIlfQI-gCkbelQucFM"
-GROUP_ID = -1002773883024
-TOPIC_ORDERS = 81003
-TOPIC_SUPPORT = 81451
-ADMIN_IDS = [841285005]
+# 🔧 НАСТРОЙКИ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
+BOT_TOKEN = os.getenv('BOT_TOKEN', "8148697332:AAGy6r-GNzqVYabKCQIlfQI-gCkbelQucFM")
+GROUP_ID = int(os.getenv('GROUP_ID', "-1002773883024"))
+TOPIC_ORDERS = int(os.getenv('TOPIC_ORDERS', "81003"))
+TOPIC_SUPPORT = int(os.getenv('TOPIC_SUPPORT', "81451"))
+ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', "841285005").split(',')]
+SPREADSHEET_NAME = os.getenv('SPREADSHEET_NAME', 'Kingsman Rent Orders')
+
+# 🔐 GOOGLE SHEETS ДАННЫЕ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
+SERVICE_ACCOUNT_JSON = os.getenv('SERVICE_ACCOUNT_JSON')
 
 # Сотрудники будут загружаться из Google Sheets
 STAFF_MEMBERS = {}
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
-# --- Настройки Google Sheets ---
-SERVICE_ACCOUNT_FILE = 'service_account.json'
-SPREADSHEET_NAME = 'Kingsman Rent Orders'
 
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
@@ -53,7 +55,18 @@ def init_google_sheets():
     """Инициализация Google Sheets"""
     global creds, gc, worksheet_orders, worksheet_assignments, worksheet_staff, sheets_enabled
     try:
-        creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        # Пытаемся получить credentials из переменных окружения
+        if SERVICE_ACCOUNT_JSON:
+            # Для облачного деплоя - из переменной окружения
+            creds_info = json.loads(SERVICE_ACCOUNT_JSON)
+            creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+            print("✅ Google Sheets инициализирована из переменных окружения")
+        else:
+            # Для локального запуска - из файла
+            SERVICE_ACCOUNT_FILE = 'service_account.json'
+            creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+            print("✅ Google Sheets инициализирована из файла")
+        
         gc = gspread.authorize(creds)
 
         # Открываем таблицу
@@ -481,6 +494,18 @@ def staff_actions_keyboard(order_id) -> InlineKeyboardMarkup:
     ])
 
 
+def staff_management_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура управления сотрудниками"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="➕ Добавить сотрудника", callback_data="add_staff"),
+            InlineKeyboardButton(text="📋 Список сотрудников", callback_data="list_staff")
+        ],
+        [
+            InlineKeyboardButton(text="✏️ Изменить должность", callback_data="edit_position"),
+            InlineKeyboardButton(text="🗑️ Удалить сотрудника", callback_data="remove_staff")
+        ]
+    ])
 
 
 # --- Команды бота ---
@@ -543,6 +568,20 @@ async def cmd_status(message: Message):
 
 
 # --- Команды управления сотрудниками ---
+@dp.message(Command("staff"))
+async def cmd_staff(message: Message):
+    """Управление сотрудниками - главное меню"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Эта команда только для администраторов.")
+        return
+
+    await message.answer(
+        "👥 Управление сотрудниками\n\n"
+        "Выберите действие:",
+        reply_markup=staff_management_keyboard()
+    )
+
+
 @dp.message(Command("add_staff"))
 async def cmd_add_staff(message: Message):
     """Добавление сотрудника - начало процесса"""
@@ -1136,7 +1175,13 @@ async def cmd_debug_orders(message: Message):
 
 # --- Запуск ---
 async def main():
-    print("🤖 Запуск бота он просыпается уже...")
+    print("🤖 Запуск бота Kingsman Rent...")
+    
+    # Проверка переменных окружения
+    print("🔧 Проверка переменных окружения:")
+    print(f"BOT_TOKEN: {'✅' if os.getenv('BOT_TOKEN') else '❌ (используется значение по умолчанию)'}")
+    print(f"GROUP_ID: {'✅' if os.getenv('GROUP_ID') else '❌ (используется значение по умолчанию)'}")
+    print(f"SERVICE_ACCOUNT_JSON: {'✅' if os.getenv('SERVICE_ACCOUNT_JSON') else '❌ (будет использоваться файл service_account.json)'}")
 
     # Инициализация Google Sheets
     if not init_google_sheets():
@@ -1152,7 +1197,7 @@ async def main():
     print(f"✅ Подключение установлено. Заказов в таблице: {len(test_orders)}")
     print(f"👥 Сотрудников в системе: {len(STAFF_MEMBERS)}")
 
-    print("✅ Бот запущен и готов к работе, проснулся xD")
+    print("✅ Бот запущен и готов к работе!")
     print("💡 Режим: Прямая работа с Google Sheets")
     print("🔧 Доступные команды: /start, /status, /my_orders, /staff")
     print("👥 Команды управления сотрудниками:")
