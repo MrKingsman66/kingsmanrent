@@ -58,7 +58,23 @@ def init_google_sheets():
         # Пытаемся получить credentials из переменных окружения
         if SERVICE_ACCOUNT_JSON:
             # Для облачного деплоя - из переменной окружения
-            creds_info = json.loads(SERVICE_ACCOUNT_JSON)
+            try:
+                # Пробуем распарсить JSON напрямую
+                creds_info = json.loads(SERVICE_ACCOUNT_JSON)
+            except json.JSONDecodeError:
+                # Если не получается, возможно JSON экранирован как строка
+                try:
+                    # Убираем экранирование
+                    service_json = SERVICE_ACCOUNT_JSON.replace('\\n', '\n').replace('\\"', '"')
+                    # Если строка начинается и заканчивается кавычками, убираем их
+                    if service_json.startswith('"') and service_json.endswith('"'):
+                        service_json = service_json[1:-1]
+                    creds_info = json.loads(service_json)
+                except json.JSONDecodeError as e:
+                    print(f"❌ Ошибка парсинга SERVICE_ACCOUNT_JSON: {e}")
+                    print(f"❌ Первые 100 символов JSON: {SERVICE_ACCOUNT_JSON[:100]}...")
+                    return False
+            
             creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
             print("✅ Google Sheets инициализирована из переменных окружения")
         else:
@@ -117,7 +133,6 @@ def init_google_sheets():
     except Exception as e:
         print(f"❌ Ошибка инициализации Google Sheets: {e}")
         return False
-
 
 # --- Загрузка сотрудников из Google Sheets ---
 async def load_staff_from_sheets():
@@ -1217,3 +1232,4 @@ if __name__ == "__main__":
         print("❌ Бот остановлен пользователем")
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
+
