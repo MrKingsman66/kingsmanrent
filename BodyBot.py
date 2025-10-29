@@ -31,7 +31,6 @@ dp = Dispatcher()
 
 # --- Настройки Google Sheets ---
 SERVICE_ACCOUNT_JSON = os.getenv("SERVICE_ACCOUNT_JSON")
-SERVICE_ACCOUNT_FILE = 'service_account.json'  # Теперь используем файл
 SPREADSHEET_NAME = 'Kingsman Rent Orders'
 
 SCOPES = [
@@ -54,43 +53,46 @@ order_confirmations = {}  # Для хранения подтверждений
 staff_management_data = {}  # Для управления сотрудниками
 
 
-# --- Создание файла service_account.json из переменной окружения ---
 def create_service_account_file():
     """Создает файл service_account.json из переменной окружения"""
     if not SERVICE_ACCOUNT_JSON:
-        print("❌ SERVICE_ACCOUNT_JSON не установлен в переменных окружения")
         return False
-        
+
     try:
-        # Парсим JSON для проверки валидности
-        service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
-        
-        # Записываем в файл
-        with open(SERVICE_ACCOUNT_FILE, 'w') as f:
-            json.dump(service_account_info, f, indent=2)
-        
-        print("✅ service_account.json успешно создан из переменной окружения")
+        with open('service_account.json', 'w') as f:
+            f.write(SERVICE_ACCOUNT_JSON)
+        print("✅ service_account.json создан из переменной окружения")
         return True
-    except json.JSONDecodeError as e:
-        print(f"❌ Ошибка парсинга JSON: {e}")
-        return False
     except Exception as e:
-        print(f"❌ Ошибка создания файла: {e}")
+        print(f"❌ Ошибка создания service_account.json: {e}")
         return False
 
 
+# В функции main():
+async def main():
+    print("🤖 Запуск бота он просыпается уже...")
+
+    if not BOT_TOKEN:
+        print("❌ Критическая ошибка: BOT_TOKEN не установлен!")
+        return
+
+    # Создаем файл service_account.json
+    if not create_service_account_file():
+        print("❌ Не удалось создать service_account.json")
+        return
 # --- Инициализация Google Sheets ---
 def init_google_sheets():
     """Инициализация Google Sheets"""
     global creds, gc, worksheet_orders, worksheet_assignments, worksheet_staff, sheets_enabled
-    
+
+    if not SERVICE_ACCOUNT_JSON:
+        print("❌ SERVICE_ACCOUNT_JSON не установлен в переменных окружения")
+        return False
+
     try:
-        # Проверяем существование файла
-        if not os.path.exists(SERVICE_ACCOUNT_FILE):
-            print(f"❌ Файл {SERVICE_ACCOUNT_FILE} не найден")
-            return False
-            
-        creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        # Парсим JSON из переменной окружения
+        service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+        creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
         gc = gspread.authorize(creds)
 
         # Открываем таблицу
@@ -337,7 +339,7 @@ async def update_order_status(order_id, status):
 
         cell = worksheet_orders.find(order_id)
         if cell:
-            # Обновляем статус (столбец I, индекс 9)
+            # Обновляем статус (столбец I, индекс 8)
             worksheet_orders.update_cell(cell.row, 9, status)
             print(f"✅ Статус заказа {order_id} обновлен на: {status}")
             return True
@@ -1179,14 +1181,9 @@ async def main():
     if not BOT_TOKEN:
         print("❌ Критическая ошибка: BOT_TOKEN не установлен в переменных окружения!")
         return
-        
+
     if not SERVICE_ACCOUNT_JSON:
         print("❌ Критическая ошибка: SERVICE_ACCOUNT_JSON не установлен в переменных окружения!")
-        return
-
-    # Создаем файл service_account.json из переменной окружения
-    if not create_service_account_file():
-        print("❌ Не удалось создать service_account.json")
         return
 
     # Инициализация Google Sheets
@@ -1195,7 +1192,7 @@ async def main():
         print("📝 Бот не может работать без подключения к Google Sheets")
         return
 
-    # Загружаем сотрудников
+    # Загружаем сотрудники
     await load_staff_from_sheets()
 
     # Проверяем подключение
