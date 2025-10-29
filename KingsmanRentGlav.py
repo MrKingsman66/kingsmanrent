@@ -55,90 +55,49 @@ def init_google_sheets():
     """Инициализация Google Sheets"""
     global creds, gc, worksheet_orders, worksheet_assignments, worksheet_staff, sheets_enabled
     try:
-        print("🔄 Начинаем инициализацию Google Sheets...")
-        
         # Пытаемся получить credentials из переменных окружения
         if SERVICE_ACCOUNT_JSON:
-            print("📝 Получен SERVICE_ACCOUNT_JSON из переменных окружения")
-            
+            # Для облачного деплоя - из переменной окружения
             try:
                 # Пробуем распарсить JSON напрямую
-                if isinstance(SERVICE_ACCOUNT_JSON, str):
-                    creds_info = json.loads(SERVICE_ACCOUNT_JSON)
-                else:
-                    creds_info = SERVICE_ACCOUNT_JSON
-                    
-                print("✅ JSON успешно распарсен")
-                
-            except json.JSONDecodeError as e:
-                print(f"❌ Ошибка парсинга JSON: {e}")
-                print("🔄 Пробуем очистить JSON...")
-                
-                # Очищаем JSON от лишних экранирований
-                service_json = SERVICE_ACCOUNT_JSON
-                if service_json.startswith('"') and service_json.endswith('"'):
-                    service_json = service_json[1:-1]
-                
-                service_json = service_json.replace('\\n', '\n').replace('\\"', '"')
-                creds_info = json.loads(service_json)
-                
-            # Создаем credentials
-            creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
-            print("✅ Credentials созданы успешно")
+                creds_info = json.loads(SERVICE_ACCOUNT_JSON)
+            except json.JSONDecodeError:
+                # Если не получается, возможно JSON экранирован как строка
+                try:
+                    # Убираем экранирование
+                    service_json = SERVICE_ACCOUNT_JSON.replace('\\n', '\n').replace('\\"', '"')
+                    # Если строка начинается и заканчивается кавычками, убираем их
+                    if service_json.startswith('"') and service_json.endswith('"'):
+                        service_json = service_json[1:-1]
+                    creds_info = json.loads(service_json)
+                except json.JSONDecodeError as e:
+                    print(f"❌ Ошибка парсинга SERVICE_ACCOUNT_JSON: {e}")
+                    print(f"❌ Первые 100 символов JSON: {SERVICE_ACCOUNT_JSON[:100]}...")
+                    return False
             
+            creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+            print("✅ Google Sheets инициализирована из переменных окружения")
         else:
-            print("❌ SERVICE_ACCOUNT_JSON не найден в переменных окружения")
-            return False
+            # Для локального запуска - из файла
+            SERVICE_ACCOUNT_FILE = 'service_account.json'
+            creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+            print("✅ Google Sheets инициализирована из файла")
         
-        # Авторизуемся в gspread
         gc = gspread.authorize(creds)
-        print("✅ Авторизация в gspread прошла успешно")
-        
+
         # Открываем таблицу
-        try:
-            spreadsheet = gc.open(SPREADSHEET_NAME)
-            print(f"✅ Таблица '{SPREADSHEET_NAME}' открыта успешно")
-        except gspread.SpreadsheetNotFound:
-            print(f"❌ Таблица '{SPREADSHEET_NAME}' не найдена")
-            print("💡 Убедитесь, что:")
-            print("   - Таблица существует")
-            print("   - Сервисный аккаунт имеет к ней доступ")
-            print("   - Название таблицы точно совпадает")
-            return False
-        
-        # Инициализация листов (остальной код без изменений)
+        spreadsheet = gc.open(SPREADSHEET_NAME)
+
+        # Лист заказов
         try:
             worksheet_orders = spreadsheet.worksheet("Orders")
         except gspread.WorksheetNotFound:
             worksheet_orders = spreadsheet.add_worksheet(title="Orders", rows="1000", cols="20")
-            headers = ["ID", "User ID", "Nickname", "Username Link", "Subscription", "Start Date", "End Date", "Created At", "Status"]
+            headers = [
+                "ID", "User ID", "Nickname", "Username Link",
+                "Subscription", "Start Date", "End Date", "Created At", "Status"
+            ]
             worksheet_orders.append_row(headers)
-
-        try:
-            worksheet_assignments = spreadsheet.worksheet("Assignments")
-        except gspread.WorksheetNotFound:
-            worksheet_assignments = spreadsheet.add_worksheet(title="Assignments", rows="1000", cols="20")
-            headers = ["Order ID", "Staff ID", "Staff Name", "Staff Username", "Assigned At", "Status"]
-            worksheet_assignments.append_row(headers)
-
-        try:
-            worksheet_staff = spreadsheet.worksheet("Staff")
-        except gspread.WorksheetNotFound:
-            worksheet_staff = spreadsheet.add_worksheet(title="Staff", rows="1000", cols="20")
-            headers = ["User ID", "Name", "Username", "Position", "Added At", "Added By", "Status"]
-            worksheet_staff.append_row(headers)
-            # Добавляем главного администратора
-            worksheet_staff.append_row([841285005, "Denis_Kingsman", "admin", "Администратор", datetime.now().strftime("%d.%m.%Y %H:%M"), "system", "active"])
-
-        sheets_enabled = True
-        print("✅ Google Sheets успешно инициализирована")
-        return True
-
-    except Exception as e:
-        print(f"❌ Критическая ошибка инициализации Google Sheets: {e}")
-        import traceback
-        print(f"🔍 Детали ошибки: {traceback.format_exc()}")
-        return False
 
         # Лист назначений сотрудников
         try:
@@ -1273,5 +1232,3 @@ if __name__ == "__main__":
         print("❌ Бот остановлен пользователем")
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
-
-
