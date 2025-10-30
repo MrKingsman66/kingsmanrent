@@ -2,6 +2,7 @@ import asyncio
 import uuid
 import re
 import html
+import os
 from datetime import datetime, timedelta
 import sqlite3
 from aiogram import Bot, Dispatcher, F
@@ -30,13 +31,14 @@ order_confirmations = {}  # Для хранения подтверждений
 staff_management_data = {}  # Для управления сотрудниками
 admin_order_management = {}  # Для управления заказами админами
 
+
 # --- Инициализация базы данных SQLite ---
 def init_database():
     """Инициализация базы данных SQLite"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         # Таблица сотрудников
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS staff (
@@ -49,7 +51,7 @@ def init_database():
                 status TEXT DEFAULT 'active'
             )
         ''')
-        
+
         # Таблица заказов
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS orders (
@@ -64,7 +66,7 @@ def init_database():
                 status TEXT DEFAULT 'pending'
             )
         ''')
-        
+
         # Таблица назначений
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS assignments (
@@ -77,29 +79,30 @@ def init_database():
                 FOREIGN KEY (order_id) REFERENCES orders (id)
             )
         ''')
-        
+
         # Добавляем главного администратора по умолчанию
         cursor.execute('''
             INSERT OR IGNORE INTO staff (user_id, name, username, position, added_at, added_by, status)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
-            841285005, 
-            "Denis_Kingsman", 
-            "admin", 
+            841285005,
+            "Denis_Kingsman",
+            "admin",
             "Администратор",
-            datetime.now().strftime("%d.%m.%Y %H:%M"), 
-            "system", 
+            datetime.now().strftime("%d.%m.%Y %H:%M"),
+            "system",
             "active"
         ))
-        
+
         conn.commit()
         conn.close()
         print("✅ База данных SQLite успешно инициализирована")
         return True
-        
+
     except Exception as e:
         print(f"❌ Ошибка инициализации базы данных: {e}")
         return False
+
 
 # --- Загрузка сотрудников из базы данных ---
 async def load_staff_from_db():
@@ -107,10 +110,10 @@ async def load_staff_from_db():
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         cursor.execute('SELECT user_id, name, username, position FROM staff WHERE status = "active"')
         staff_rows = cursor.fetchall()
-        
+
         staff_members = {}
         for row in staff_rows:
             user_id, name, username, position = row
@@ -119,14 +122,15 @@ async def load_staff_from_db():
                 "username": username,
                 "position": position
             }
-        
+
         conn.close()
         print(f"✅ Загружено {len(staff_members)} сотрудников из базы данных")
         return staff_members
-        
+
     except Exception as e:
         print(f"❌ Ошибка при загрузке сотрудников: {e}")
         return {}
+
 
 # --- Работа с сотрудниками ---
 async def add_staff_member(user_id, name, username, position, added_by):
@@ -134,15 +138,15 @@ async def add_staff_member(user_id, name, username, position, added_by):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         # Проверяем, существует ли уже сотрудник
         cursor.execute('SELECT user_id FROM staff WHERE user_id = ?', (user_id,))
         existing_staff = cursor.fetchone()
-        
+
         if existing_staff:
             conn.close()
             return False, f"❌ Сотрудник с ID {user_id} уже существует"
-        
+
         # Добавляем нового сотрудника
         cursor.execute('''
             INSERT INTO staff (user_id, name, username, position, added_at, added_by, status)
@@ -156,97 +160,100 @@ async def add_staff_member(user_id, name, username, position, added_by):
             added_by,
             "active"
         ))
-        
+
         conn.commit()
         conn.close()
-        
+
         # Обновляем кэш
         global STAFF_MEMBERS
         STAFF_MEMBERS = await load_staff_from_db()
-        
+
         return True, f"✅ Сотрудник {name} (@{username}) успешно добавлен как {position}"
-        
+
     except Exception as e:
         print(f"❌ Ошибка при добавлении сотрудника: {e}")
         return False, f"❌ Ошибка при добавлении сотрудника: {e}"
+
 
 async def update_staff_position(user_id, new_position, updated_by):
     """Обновление должности сотрудника"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         # Проверяем существование сотрудника
         cursor.execute('SELECT name FROM staff WHERE user_id = ?', (user_id,))
         staff_info = cursor.fetchone()
-        
+
         if not staff_info:
             conn.close()
             return False, f"❌ Сотрудник с ID {user_id} не найден"
-        
+
         # Обновляем должность
         cursor.execute('''
             UPDATE staff SET position = ? WHERE user_id = ?
         ''', (new_position, user_id))
-        
+
         conn.commit()
         conn.close()
-        
+
         # Обновляем кэш
         global STAFF_MEMBERS
         STAFF_MEMBERS = await load_staff_from_db()
-        
+
         staff_name = STAFF_MEMBERS.get(user_id, {}).get("name", "Неизвестный")
         return True, f"✅ Должность сотрудника {staff_name} изменена на: {new_position}"
-        
+
     except Exception as e:
         print(f"❌ Ошибка при обновлении должности: {e}")
         return False, f"❌ Ошибка при обновлении должности: {e}"
+
 
 async def remove_staff_member(user_id, removed_by):
     """Удаление сотрудника"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         # Проверяем существование сотрудника
         cursor.execute('SELECT name FROM staff WHERE user_id = ?', (user_id,))
         staff_info = cursor.fetchone()
-        
+
         if not staff_info:
             conn.close()
             return False, f"❌ Сотрудник с ID {user_id} не найден"
-        
+
         # Помечаем как неактивного
         cursor.execute('''
             UPDATE staff SET status = 'inactive' WHERE user_id = ?
         ''', (user_id,))
-        
+
         conn.commit()
         conn.close()
-        
+
         # Обновляем кэш
         global STAFF_MEMBERS
         STAFF_MEMBERS = await load_staff_from_db()
-        
+
         staff_name = STAFF_MEMBERS.get(user_id, {}).get("name", "Неизвестный")
         return True, f"✅ Сотрудник {staff_name} удален из системы"
-        
+
     except Exception as e:
         print(f"❌ Ошибка при удалении сотрудника: {e}")
         return False, f"❌ Ошибка при удалении сотрудника: {e}"
+
 
 async def get_staff_member(user_id):
     """Получение информации о сотруднике"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         cursor.execute('SELECT * FROM staff WHERE user_id = ?', (user_id,))
         row = cursor.fetchone()
-        
+
         conn.close()
-        
+
         if row:
             return {
                 "user_id": row[0],
@@ -258,10 +265,11 @@ async def get_staff_member(user_id):
                 "status": row[6]
             }
         return None
-        
+
     except Exception as e:
         print(f"❌ Ошибка при получении сотрудника: {e}")
         return None
+
 
 # --- Работа с заказами ---
 async def get_all_orders():
@@ -269,10 +277,10 @@ async def get_all_orders():
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         cursor.execute('SELECT * FROM orders ORDER BY created_at DESC')
         order_rows = cursor.fetchall()
-        
+
         orders = []
         for row in order_rows:
             orders.append({
@@ -286,21 +294,22 @@ async def get_all_orders():
                 "created_at": row[7],
                 "status": row[8]
             })
-        
+
         conn.close()
         print(f"✅ Загружено {len(orders)} заказов из базы данных")
         return orders
-        
+
     except Exception as e:
         print(f"❌ Ошибка при загрузке заказов: {e}")
         return []
+
 
 async def save_order_to_db(order_data):
     """Сохранение заказа в базу данных"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             INSERT INTO orders (id, user_id, nickname, username_link, subscription, start_date, end_date, created_at, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -315,43 +324,45 @@ async def save_order_to_db(order_data):
             datetime.now().strftime("%d.%m.%Y %H:%M"),
             "pending"
         ))
-        
+
         conn.commit()
         conn.close()
-        
+
         print(f"✅ Заказ {order_data['id']} сохранен в базу данных")
         return True
-        
+
     except Exception as e:
         print(f"❌ Ошибка при сохранении заказа: {e}")
         return False
+
 
 async def update_order_status(order_id, status):
     """Обновление статуса заказа"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             UPDATE orders SET status = ? WHERE id = ?
         ''', (status, order_id))
-        
+
         conn.commit()
         conn.close()
-        
+
         print(f"✅ Статус заказа {order_id} обновлен на: {status}")
         return True
-        
+
     except Exception as e:
         print(f"❌ Ошибка при обновлении статуса: {e}")
         return False
+
 
 async def assign_order_to_staff(order_id, staff_id, staff_name, staff_username):
     """Назначение заказа сотруднику"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             INSERT OR REPLACE INTO assignments (order_id, staff_id, staff_name, staff_username, assigned_at, status)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -363,28 +374,29 @@ async def assign_order_to_staff(order_id, staff_id, staff_name, staff_username):
             datetime.now().strftime("%d.%m.%Y %H:%M"),
             "in_progress"
         ))
-        
+
         conn.commit()
         conn.close()
-        
+
         print(f"✅ Заказ {order_id} назначен сотруднику {staff_name} (@{staff_username})")
         return True
-        
+
     except Exception as e:
         print(f"❌ Ошибка при назначении заказа: {e}")
         return False
+
 
 async def get_order_assignment(order_id):
     """Получение информации о назначении заказа"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         cursor.execute('SELECT * FROM assignments WHERE order_id = ?', (order_id,))
         row = cursor.fetchone()
-        
+
         conn.close()
-        
+
         if row:
             return {
                 "order_id": row[0],
@@ -395,10 +407,11 @@ async def get_order_assignment(order_id):
                 "status": row[5]
             }
         return None
-        
+
     except Exception as e:
         print(f"❌ Ошибка при получении назначения: {e}")
         return None
+
 
 async def get_user_active_orders(user_id):
     """Получение активных заказов пользователя"""
@@ -421,6 +434,7 @@ async def get_user_active_orders(user_id):
     except Exception as e:
         print(f"❌ Ошибка при получении заказов пользователя: {e}")
         return []
+
 
 async def can_user_create_order(user_id, username_link):
     """Проверяет, может ли пользователь создать новый заказ"""
@@ -468,37 +482,39 @@ async def can_user_create_order(user_id, username_link):
         print(f"❌ Ошибка при проверке возможности создания заказа: {e}")
         return True, None
 
+
 async def delete_order_from_db(order_id):
     """Удаление заказа из базы данных"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         # Удаляем заказ из таблицы orders
         cursor.execute('DELETE FROM orders WHERE id = ?', (order_id,))
-        
+
         # Удаляем связанные назначения
         cursor.execute('DELETE FROM assignments WHERE order_id = ?', (order_id,))
-        
+
         conn.commit()
         conn.close()
-        
+
         print(f"✅ Заказ {order_id} удален из базы данных")
         return True
-        
+
     except Exception as e:
         print(f"❌ Ошибка при удалении заказа: {e}")
         return False
+
 
 async def add_order_by_admin(order_data):
     """Добавление заказа администратором"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         # Генерируем ID заказа
         order_id = str(uuid.uuid4())[:8]
-        
+
         cursor.execute('''
             INSERT INTO orders (id, user_id, nickname, username_link, subscription, start_date, end_date, created_at, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -513,16 +529,17 @@ async def add_order_by_admin(order_data):
             datetime.now().strftime("%d.%m.%Y %H:%M"),
             order_data.get("status", "pending")
         ))
-        
+
         conn.commit()
         conn.close()
-        
+
         print(f"✅ Заказ {order_id} добавлен администратором")
         return True, order_id
-        
+
     except Exception as e:
         print(f"❌ Ошибка при добавлении заказа админом: {e}")
         return False, None
+
 
 def validate_nickname(nickname):
     """Проверяет формат ника: должен содержать нижнее подчеркивание"""
@@ -541,12 +558,14 @@ def validate_nickname(nickname):
 
     return True, "✅ Формат ника правильный!"
 
+
 # --- Клавиатуры ---
 def start_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📝 Оформить заказ", callback_data="start_order")],
         [InlineKeyboardButton(text="🛠 Техническая поддержка", callback_data="support_start")]
     ])
+
 
 def subscription_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -555,6 +574,7 @@ def subscription_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🚙 Комфорт", callback_data="comfort")],
         [InlineKeyboardButton(text="🏎 Премиум", callback_data="premium")]
     ])
+
 
 def confirmation_keyboard(order_id) -> InlineKeyboardMarkup:
     """Клавиатура подтверждения заказа"""
@@ -565,6 +585,7 @@ def confirmation_keyboard(order_id) -> InlineKeyboardMarkup:
         ]
     ])
 
+
 def staff_actions_keyboard(order_id) -> InlineKeyboardMarkup:
     """Клавиатура действий для сотрудников - ПРОСТО КНОПКА ВЗЯТЬ ЗАКАЗ"""
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -574,24 +595,29 @@ def staff_actions_keyboard(order_id) -> InlineKeyboardMarkup:
         )]
     ])
 
-def admin_orders_keyboard(page=0, orders_per_page=10):
-    """Клавиатура для управления заказами администратором"""
+
+async def admin_orders_keyboard(page=0, orders_per_page=10):
+    """Клавиатура для управления заказами администратором (асинхронная)"""
     keyboard = []
-    
+
+    # Получаем заказы асинхронно
+    orders = await get_all_orders()
+
     # Кнопки управления
     control_buttons = []
     if page > 0:
-        control_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_orders_page_{page-1}"))
-    
+        control_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_orders_page_{page - 1}"))
+
     control_buttons.append(InlineKeyboardButton(text="✚ Добавить заказ", callback_data="admin_add_order"))
-    
-    if len(await get_all_orders()) > (page + 1) * orders_per_page:
-        control_buttons.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"admin_orders_page_{page+1}"))
-    
+
+    if len(orders) > (page + 1) * orders_per_page:
+        control_buttons.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"admin_orders_page_{page + 1}"))
+
     if control_buttons:
         keyboard.append(control_buttons)
-    
+
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 
 def admin_order_actions_keyboard(order_id):
     """Клавиатура действий с конкретным заказом для администратора"""
@@ -602,6 +628,7 @@ def admin_order_actions_keyboard(order_id):
         ]
     ])
 
+
 def admin_confirm_delete_keyboard(order_id):
     """Клавиатура подтверждения удаления заказа"""
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -610,6 +637,7 @@ def admin_confirm_delete_keyboard(order_id):
             InlineKeyboardButton(text="❌ Отмена", callback_data="admin_all_orders_0")
         ]
     ])
+
 
 # --- Команды бота ---
 @dp.message(Command("start"))
@@ -620,6 +648,7 @@ async def cmd_start(message: Message):
         "👋 Привет! Добро пожаловать в Kingsman Rent.\nВыберите действие:",
         reply_markup=start_keyboard()
     )
+
 
 @dp.message(Command("status"))
 async def cmd_status(message: Message):
@@ -669,6 +698,7 @@ async def cmd_status(message: Message):
     await message.answer(status_text)
     print(f"✅ Отправлен статус пользователю {message.from_user.id}")
 
+
 # --- Команды управления сотрудниками ---
 @dp.message(Command("add_staff"))
 async def cmd_add_staff(message: Message):
@@ -690,6 +720,7 @@ async def cmd_add_staff(message: Message):
         "2. Скопируйте его User ID из ответа"
     )
 
+
 @dp.message(Command("set_position"))
 async def cmd_set_position(message: Message):
     """Изменение должности сотрудника - начало процесса"""
@@ -706,6 +737,7 @@ async def cmd_set_position(message: Message):
         "✏️ Изменение должности сотрудника\n\n"
         "Введите User ID сотрудника (числовой идентификатор):"
     )
+
 
 @dp.message(Command("remove_staff"))
 async def cmd_remove_staff(message: Message):
@@ -724,6 +756,7 @@ async def cmd_remove_staff(message: Message):
         "Введите User ID сотрудника (числовой идентификатор):"
     )
 
+
 @dp.message(Command("list_staff"))
 async def cmd_list_staff(message: Message):
     """Показать список всех сотрудников"""
@@ -732,7 +765,7 @@ async def cmd_list_staff(message: Message):
         return
 
     staff_members = await load_staff_from_db()
-    
+
     if not staff_members:
         await message.answer("📭 В системе нет сотрудников.")
         return
@@ -749,6 +782,7 @@ async def cmd_list_staff(message: Message):
 
     await message.answer(staff_list)
 
+
 # --- Команды управления заказами для администраторов ---
 @dp.message(Command("all_orders"))
 async def cmd_all_orders(message: Message):
@@ -759,10 +793,11 @@ async def cmd_all_orders(message: Message):
 
     await show_orders_page(message, 0)
 
+
 async def show_orders_page(message: Message, page: int, orders_per_page: int = 10):
     """Показать страницу с заказами"""
     orders = await get_all_orders()
-    
+
     if not orders:
         await message.answer("📭 В системе нет заказов.")
         return
@@ -773,14 +808,14 @@ async def show_orders_page(message: Message, page: int, orders_per_page: int = 1
     page_orders = orders[start_idx:end_idx]
 
     orders_text = f"📋 Все заказы (страница {page + 1}):\n\n"
-    
+
     for i, order in enumerate(page_orders, start_idx + 1):
         # Получаем информацию о назначении
         assignment = await get_order_assignment(order["id"])
         assigned_info = ""
         if assignment:
             assigned_info = f"👨‍💼 Назначен: {assignment['staff_name']} (@{assignment['staff_username']})"
-        
+
         orders_text += (
             f"#{i} 🆔 {order['id']}\n"
             f"👤 Ник: {order['nickname']}\n"
@@ -793,10 +828,14 @@ async def show_orders_page(message: Message, page: int, orders_per_page: int = 1
             f"🕐 Создан: {order['created_at']}\n\n"
         )
 
+    # Используем await при вызове асинхронной функции
+    keyboard = await admin_orders_keyboard(page, orders_per_page)
+
     await message.answer(
         orders_text,
-        reply_markup=admin_orders_keyboard(page, orders_per_page)
+        reply_markup=keyboard
     )
+
 
 @dp.message(Command("add_order_admin"))
 async def cmd_add_order_admin(message: Message):
@@ -815,6 +854,7 @@ async def cmd_add_order_admin(message: Message):
         "Введите игровой ник пользователя (в формате Name_Surname):"
     )
 
+
 @dp.message(Command("delete_order"))
 async def cmd_delete_order(message: Message):
     """Удаление заказа по ID"""
@@ -831,7 +871,7 @@ async def cmd_delete_order(message: Message):
     # Проверяем существование заказа
     orders = await get_all_orders()
     order_exists = any(order["id"] == order_id for order in orders)
-    
+
     if not order_exists:
         await message.answer(f"❌ Заказ с ID {order_id} не найден.")
         return
@@ -840,6 +880,7 @@ async def cmd_delete_order(message: Message):
         f"⚠️ Вы уверены, что хотите удалить заказ {order_id}?",
         reply_markup=admin_confirm_delete_keyboard(order_id)
     )
+
 
 # --- Обработка ввода для управления сотрудниками ---
 @dp.message(F.text)
@@ -933,6 +974,7 @@ async def handle_text(message: Message):
         await message.answer("✅ Спасибо! Ваше обращение отправлено, ожидайте ответа.")
         player_data.pop(user_id, None)
 
+
 async def handle_admin_order_management(message: Message, management_data):
     """Обработка ввода для добавления заказа администратором"""
     user_id = message.from_user.id
@@ -947,7 +989,7 @@ async def handle_admin_order_management(message: Message, management_data):
 
         management_data["order_data"]["nickname"] = text
         management_data["stage"] = "waiting_subscription"
-        
+
         await message.answer(
             "✅ Ник принят\n\n"
             "Теперь выберите тип абонемента:",
@@ -963,7 +1005,7 @@ async def handle_admin_order_management(message: Message, management_data):
             user_id_input = int(text)
             management_data["order_data"]["user_id"] = user_id_input
             management_data["stage"] = "waiting_username_link"
-            
+
             await message.answer(
                 "✅ User ID принят\n\n"
                 "Теперь введите ссылку на пользователя (например, https://t.me/username или 'нет'):"
@@ -974,7 +1016,7 @@ async def handle_admin_order_management(message: Message, management_data):
     elif management_data["stage"] == "waiting_username_link":
         management_data["order_data"]["username_link"] = text if text != "нет" else "Нет ссылки"
         management_data["stage"] = "waiting_start_date"
-        
+
         await message.answer(
             "✅ Ссылка принята\n\n"
             "Теперь введите дату начала (в формате ДД.ММ.ГГГГ) или отправьте 'сегодня' для текущей даты:"
@@ -992,7 +1034,7 @@ async def handle_admin_order_management(message: Message, management_data):
 
         management_data["order_data"]["start"] = start_date.strftime("%d.%m.%Y")
         management_data["stage"] = "waiting_end_date"
-        
+
         await message.answer(
             "✅ Дата начала принята\n\n"
             "Теперь введите дату окончания (в формате ДД.ММ.ГГГГ) или отправьте '+7' для 7 дней от начала:"
@@ -1010,10 +1052,10 @@ async def handle_admin_order_management(message: Message, management_data):
                 return
 
         management_data["order_data"]["end"] = end_date.strftime("%d.%m.%Y")
-        
+
         # Сохраняем заказ
         success, order_id = await add_order_by_admin(management_data["order_data"])
-        
+
         if success:
             await message.answer(
                 f"✅ Заказ успешно добавлен!\n\n"
@@ -1024,9 +1066,10 @@ async def handle_admin_order_management(message: Message, management_data):
             )
         else:
             await message.answer("❌ Ошибка при добавлении заказа")
-        
+
         # Очищаем временные данные
         admin_order_management.pop(user_id, None)
+
 
 async def handle_staff_management(message: Message, management_data):
     """Обработка ввода для управления сотрудниками"""
@@ -1114,6 +1157,7 @@ async def handle_staff_management(message: Message, management_data):
 
         staff_management_data.pop(user_id, None)
 
+
 # --- Обработчики callback для управления заказами ---
 @dp.callback_query(F.data.startswith("admin_orders_page_"))
 async def handle_admin_orders_page(callback: CallbackQuery):
@@ -1129,6 +1173,7 @@ async def handle_admin_orders_page(callback: CallbackQuery):
     except ValueError:
         await callback.answer("❌ Ошибка пагинации")
 
+
 @dp.callback_query(F.data == "admin_all_orders_0")
 async def handle_admin_all_orders(callback: CallbackQuery):
     """Обработка возврата к списку заказов"""
@@ -1138,6 +1183,7 @@ async def handle_admin_all_orders(callback: CallbackQuery):
 
     await show_orders_page(callback.message, 0)
     await callback.answer()
+
 
 @dp.callback_query(F.data == "admin_add_order")
 async def handle_admin_add_order(callback: CallbackQuery):
@@ -1160,6 +1206,7 @@ async def handle_admin_add_order(callback: CallbackQuery):
     )
     await callback.answer()
 
+
 @dp.callback_query(F.data.startswith("admin_delete_order_"))
 async def handle_admin_delete_order(callback: CallbackQuery):
     """Обработка запроса на удаление заказа"""
@@ -1168,12 +1215,13 @@ async def handle_admin_delete_order(callback: CallbackQuery):
         return
 
     order_id = callback.data.replace("admin_delete_order_", "")
-    
+
     await callback.message.answer(
         f"⚠️ Вы уверены, что хотите удалить заказ {order_id}?",
         reply_markup=admin_confirm_delete_keyboard(order_id)
     )
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("admin_confirm_delete_"))
 async def handle_admin_confirm_delete(callback: CallbackQuery):
@@ -1183,17 +1231,18 @@ async def handle_admin_confirm_delete(callback: CallbackQuery):
         return
 
     order_id = callback.data.replace("admin_confirm_delete_", "")
-    
+
     success = await delete_order_from_db(order_id)
-    
+
     if success:
         await callback.message.answer(f"✅ Заказ {order_id} успешно удален!")
         # Возвращаемся к списку заказов
         await show_orders_page(callback.message, 0)
     else:
         await callback.message.answer(f"❌ Ошибка при удалении заказа {order_id}")
-    
+
     await callback.answer()
+
 
 # --- Остальные обработчики (заказы, поддержка, назначения) ---
 @dp.callback_query(F.data == "start_order")
@@ -1224,6 +1273,7 @@ async def ask_nickname(callback: CallbackQuery):
     )
     await callback.answer()
 
+
 @dp.callback_query(F.data == "support_start")
 async def start_support(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -1251,25 +1301,26 @@ async def start_support(callback: CallbackQuery):
     )
     await callback.answer()
 
+
 @dp.callback_query(F.data.in_(["econom", "standard", "comfort", "premium"]))
 async def process_order(callback: CallbackQuery):
     user_id = callback.from_user.id
-    
+
     # Проверяем, обычный ли это заказ или заказ от администратора
     admin_order_entry = admin_order_management.get(user_id)
     if admin_order_entry and admin_order_entry["stage"] == "waiting_subscription":
         # Это заказ от администратора
         subscription_names = {
             "econom": "Эконом",
-            "standard": "Стандарт", 
+            "standard": "Стандарт",
             "comfort": "Комфорт",
             "premium": "Премиум"
         }
-        
+
         chosen = callback.data
         admin_order_entry["order_data"]["subscription"] = subscription_names[chosen]
         admin_order_entry["stage"] = "waiting_user_id"
-        
+
         await callback.message.answer(
             "✅ Абонемент выбран\n\n"
             "Теперь введите User ID пользователя (числовой идентификатор) или 0 если неизвестно:"
@@ -1331,6 +1382,7 @@ async def process_order(callback: CallbackQuery):
         reply_markup=confirmation_keyboard(order_id)
     )
     await callback.answer()
+
 
 # --- Обработка подтверждения заказа ---
 @dp.callback_query(F.data.startswith("confirm_"))
@@ -1416,16 +1468,17 @@ async def send_reminder_to_user(user_id: int, order_data: dict, order_id: str):
             f"🆔 <b>ID заказа:</b> {order_id}\n\n"
             "Приятной поездки! 🚀"
         )
-        
+
         await bot.send_message(
             chat_id=user_id,
             text=reminder_text,
             parse_mode="HTML"
         )
         print(f"✅ Памятка отправлена пользователю {user_id}")
-        
+
     except Exception as e:
         print(f"❌ Ошибка при отправке памятки пользователю {user_id}: {e}")
+
 
 # --- Обработка взятия заказа сотрудником ---
 @dp.callback_query(F.data.startswith("take_order_"))
@@ -1433,7 +1486,7 @@ async def take_order(callback: CallbackQuery):
     """Новый обработчик взятия заказа сотрудником"""
     # Загружаем актуальный список сотрудников
     staff_members = await load_staff_from_db()
-    
+
     # Проверяем, является ли пользователь сотрудником
     staff_id = callback.from_user.id
     if staff_id not in staff_members:
@@ -1481,16 +1534,18 @@ async def take_order(callback: CallbackQuery):
 
     await callback.answer(f"✅ Вы взяли заказ {order_id} в работу")
 
+
 # --- Другие команды ---
 @dp.message(Command("getid"))
 async def cmd_getid(message: Message):
     await message.answer(f"Chat ID: {message.chat.id}\nUser ID: {message.from_user.id}")
 
+
 @dp.message(Command("myid"))
 async def cmd_myid(message: Message):
     user_id = message.from_user.id
     staff_members = await load_staff_from_db()
-    
+
     is_admin = user_id in ADMIN_IDS
     is_staff = user_id in staff_members
     admin_status = "✅ Администратор" if is_admin else "❌ Не администратор"
@@ -1502,6 +1557,7 @@ async def cmd_myid(message: Message):
         f"👨‍💼 Роль: {staff_status}\n"
         f"📋 ID администраторов: {ADMIN_IDS}"
     )
+
 
 @dp.message(Command("my_orders"))
 async def cmd_my_orders(message: Message):
@@ -1525,6 +1581,7 @@ async def cmd_my_orders(message: Message):
 
     await message.answer(orders_text)
 
+
 @dp.message(Command("staff_orders"))
 async def cmd_staff_orders(message: Message):
     """Показать заказы в работе у сотрудников"""
@@ -1536,10 +1593,10 @@ async def cmd_staff_orders(message: Message):
         # Получаем все назначения из базы данных
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
         cursor.execute('SELECT * FROM assignments WHERE status = "in_progress"')
         active_assignments = cursor.fetchall()
-        
+
         conn.close()
 
         if not active_assignments:
@@ -1560,6 +1617,7 @@ async def cmd_staff_orders(message: Message):
     except Exception as e:
         await message.answer(f"❌ Ошибка при получении данных: {e}")
 
+
 @dp.message(Command("debug_orders"))
 async def cmd_debug_orders(message: Message):
     if message.from_user.id not in ADMIN_IDS:
@@ -1579,6 +1637,7 @@ async def cmd_debug_orders(message: Message):
     await message.answer(
         f"📊 Всего заказов в базе данных: {len(orders)}\n\n{orders_list}"
     )
+
 
 # --- Запуск ---
 async def main():
@@ -1612,6 +1671,7 @@ async def main():
 
     await dp.start_polling(bot)
 
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())
@@ -1619,5 +1679,4 @@ if __name__ == "__main__":
         print("❌ Бот остановлен пользователем")
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
-
 
