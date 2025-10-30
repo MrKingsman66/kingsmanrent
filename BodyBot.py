@@ -28,6 +28,7 @@ player_data = {}
 support_requests = []
 order_confirmations = {}  # Для хранения подтверждений
 staff_management_data = {}  # Для управления сотрудниками
+admin_order_management = {}  # Для управления заказами админами
 
 # --- Инициализация базы данных SQLite ---
 def init_database():
@@ -269,7 +270,7 @@ async def get_all_orders():
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        cursor.execute('SELECT * FROM orders')
+        cursor.execute('SELECT * FROM orders ORDER BY created_at DESC')
         order_rows = cursor.fetchall()
         
         orders = []
@@ -467,6 +468,62 @@ async def can_user_create_order(user_id, username_link):
         print(f"❌ Ошибка при проверке возможности создания заказа: {e}")
         return True, None
 
+async def delete_order_from_db(order_id):
+    """Удаление заказа из базы данных"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Удаляем заказ из таблицы orders
+        cursor.execute('DELETE FROM orders WHERE id = ?', (order_id,))
+        
+        # Удаляем связанные назначения
+        cursor.execute('DELETE FROM assignments WHERE order_id = ?', (order_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Заказ {order_id} удален из базы данных")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка при удалении заказа: {e}")
+        return False
+
+async def add_order_by_admin(order_data):
+    """Добавление заказа администратором"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Генерируем ID заказа
+        order_id = str(uuid.uuid4())[:8]
+        
+        cursor.execute('''
+            INSERT INTO orders (id, user_id, nickname, username_link, subscription, start_date, end_date, created_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            order_id,
+            order_data["user_id"],
+            order_data["nickname"],
+            order_data["username_link"],
+            order_data["subscription"],
+            order_data["start"],
+            order_data["end"],
+            datetime.now().strftime("%d.%m.%Y %H:%M"),
+            order_data.get("status", "pending")
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Заказ {order_id} добавлен администратором")
+        return True, order_id
+        
+    except Exception as e:
+        print(f"❌ Ошибка при добавлении заказа админом: {e}")
+        return False, None
+
 def validate_nickname(nickname):
     """Проверяет формат ника: должен содержать нижнее подчеркивание"""
     if "_" not in nickname:
@@ -515,6 +572,43 @@ def staff_actions_keyboard(order_id) -> InlineKeyboardMarkup:
             text="Взять заказ",
             callback_data=f"take_order_{order_id}"
         )]
+    ])
+
+def admin_orders_keyboard(page=0, orders_per_page=10):
+    """Клавиатура для управления заказами администратором"""
+    keyboard = []
+    
+    # Кнопки управления
+    control_buttons = []
+    if page > 0:
+        control_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_orders_page_{page-1}"))
+    
+    control_buttons.append(InlineKeyboardButton(text="✚ Добавить заказ", callback_data="admin_add_order"))
+    
+    if len(await get_all_orders()) > (page + 1) * orders_per_page:
+        control_buttons.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"admin_orders_page_{page+1}"))
+    
+    if control_buttons:
+        keyboard.append(control_buttons)
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def admin_order_actions_keyboard(order_id):
+    """Клавиатура действий с конкретным заказом для администратора"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="❌ Удалить", callback_data=f"admin_delete_order_{order_id}"),
+            InlineKeyboardButton(text="📋 Все заказы", callback_data="admin_all_orders_0")
+        ]
+    ])
+
+def admin_confirm_delete_keyboard(order_id):
+    """Клавиатура подтверждения удаления заказа"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"admin_confirm_delete_{order_id}"),
+            InlineKeyboardButton(text="❌ Отмена", callback_data="admin_all_orders_0")
+        ]
     ])
 
 # --- Команды бота ---
@@ -655,6 +749,98 @@ async def cmd_list_staff(message: Message):
 
     await message.answer(staff_list)
 
+# --- Команды управления заказами для администраторов ---
+@dp.message(Command("all_orders"))
+async def cmd_all_orders(message: Message):
+    """Показать все заказы с пагинацией"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Эта команда только для администраторов.")
+        return
+
+    await show_orders_page(message, 0)
+
+async def show_orders_page(message: Message, page: int, orders_per_page: int = 10):
+    """Показать страницу с заказами"""
+    orders = await get_all_orders()
+    
+    if not orders:
+        await message.answer("📭 В системе нет заказов.")
+        return
+
+    # Вычисляем диапазон заказов для текущей страницы
+    start_idx = page * orders_per_page
+    end_idx = start_idx + orders_per_page
+    page_orders = orders[start_idx:end_idx]
+
+    orders_text = f"📋 Все заказы (страница {page + 1}):\n\n"
+    
+    for i, order in enumerate(page_orders, start_idx + 1):
+        # Получаем информацию о назначении
+        assignment = await get_order_assignment(order["id"])
+        assigned_info = ""
+        if assignment:
+            assigned_info = f"👨‍💼 Назначен: {assignment['staff_name']} (@{assignment['staff_username']})"
+        
+        orders_text += (
+            f"#{i} 🆔 {order['id']}\n"
+            f"👤 Ник: {order['nickname']}\n"
+            f"🔗 Ссылка: {order['username_link']}\n"
+            f"🚘 Абонемент: {order['subscription']}\n"
+            f"📅 Начало: {order['start']}\n"
+            f"📅 Окончание: {order['end']}\n"
+            f"📊 Статус: {order['status']}\n"
+            f"{assigned_info}\n"
+            f"🕐 Создан: {order['created_at']}\n\n"
+        )
+
+    await message.answer(
+        orders_text,
+        reply_markup=admin_orders_keyboard(page, orders_per_page)
+    )
+
+@dp.message(Command("add_order_admin"))
+async def cmd_add_order_admin(message: Message):
+    """Добавление заказа администратором"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Эта команда только для администраторов.")
+        return
+
+    admin_order_management[message.from_user.id] = {
+        "stage": "waiting_nickname",
+        "order_data": {}
+    }
+
+    await message.answer(
+        "➕ Добавление нового заказа (администратор)\n\n"
+        "Введите игровой ник пользователя (в формате Name_Surname):"
+    )
+
+@dp.message(Command("delete_order"))
+async def cmd_delete_order(message: Message):
+    """Удаление заказа по ID"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Эта команда только для администраторов.")
+        return
+
+    try:
+        order_id = message.text.split()[1]  # /delete_order ORDER_ID
+    except IndexError:
+        await message.answer("❌ Использование: /delete_order <ID_заказа>")
+        return
+
+    # Проверяем существование заказа
+    orders = await get_all_orders()
+    order_exists = any(order["id"] == order_id for order in orders)
+    
+    if not order_exists:
+        await message.answer(f"❌ Заказ с ID {order_id} не найден.")
+        return
+
+    await message.answer(
+        f"⚠️ Вы уверены, что хотите удалить заказ {order_id}?",
+        reply_markup=admin_confirm_delete_keyboard(order_id)
+    )
+
 # --- Обработка ввода для управления сотрудниками ---
 @dp.message(F.text)
 async def handle_text(message: Message):
@@ -667,6 +853,12 @@ async def handle_text(message: Message):
     staff_management_entry = staff_management_data.get(user_id)
     if staff_management_entry:
         await handle_staff_management(message, staff_management_entry)
+        return
+
+    # Проверяем, находится ли администратор в процессе добавления заказа
+    admin_order_entry = admin_order_management.get(user_id)
+    if admin_order_entry:
+        await handle_admin_order_management(message, admin_order_entry)
         return
 
     # Обработка обычных сообщений (заказы, поддержка)
@@ -740,6 +932,101 @@ async def handle_text(message: Message):
         )
         await message.answer("✅ Спасибо! Ваше обращение отправлено, ожидайте ответа.")
         player_data.pop(user_id, None)
+
+async def handle_admin_order_management(message: Message, management_data):
+    """Обработка ввода для добавления заказа администратором"""
+    user_id = message.from_user.id
+    text = message.text.strip()
+
+    if management_data["stage"] == "waiting_nickname":
+        # Проверяем формат ника
+        is_valid, validation_message = validate_nickname(text)
+        if not is_valid:
+            await message.answer(validation_message)
+            return
+
+        management_data["order_data"]["nickname"] = text
+        management_data["stage"] = "waiting_subscription"
+        
+        await message.answer(
+            "✅ Ник принят\n\n"
+            "Теперь выберите тип абонемента:",
+            reply_markup=subscription_keyboard()
+        )
+
+    elif management_data["stage"] == "waiting_subscription":
+        # Этот этап обрабатывается через callback
+        pass
+
+    elif management_data["stage"] == "waiting_user_id":
+        try:
+            user_id_input = int(text)
+            management_data["order_data"]["user_id"] = user_id_input
+            management_data["stage"] = "waiting_username_link"
+            
+            await message.answer(
+                "✅ User ID принят\n\n"
+                "Теперь введите ссылку на пользователя (например, https://t.me/username или 'нет'):"
+            )
+        except ValueError:
+            await message.answer("❌ Неверный формат User ID! Введите числовой идентификатор.")
+
+    elif management_data["stage"] == "waiting_username_link":
+        management_data["order_data"]["username_link"] = text if text != "нет" else "Нет ссылки"
+        management_data["stage"] = "waiting_start_date"
+        
+        await message.answer(
+            "✅ Ссылка принята\n\n"
+            "Теперь введите дату начала (в формате ДД.ММ.ГГГГ) или отправьте 'сегодня' для текущей даты:"
+        )
+
+    elif management_data["stage"] == "waiting_start_date":
+        if text.lower() == "сегодня":
+            start_date = datetime.now()
+        else:
+            try:
+                start_date = datetime.strptime(text, "%d.%m.%Y")
+            except ValueError:
+                await message.answer("❌ Неверный формат даты! Используйте ДД.ММ.ГГГГ")
+                return
+
+        management_data["order_data"]["start"] = start_date.strftime("%d.%m.%Y")
+        management_data["stage"] = "waiting_end_date"
+        
+        await message.answer(
+            "✅ Дата начала принята\n\n"
+            "Теперь введите дату окончания (в формате ДД.ММ.ГГГГ) или отправьте '+7' для 7 дней от начала:"
+        )
+
+    elif management_data["stage"] == "waiting_end_date":
+        if text == "+7":
+            start_date = datetime.strptime(management_data["order_data"]["start"], "%d.%m.%Y")
+            end_date = start_date + timedelta(days=7)
+        else:
+            try:
+                end_date = datetime.strptime(text, "%d.%m.%Y")
+            except ValueError:
+                await message.answer("❌ Неверный формат даты! Используйте ДД.ММ.ГГГГ")
+                return
+
+        management_data["order_data"]["end"] = end_date.strftime("%d.%m.%Y")
+        
+        # Сохраняем заказ
+        success, order_id = await add_order_by_admin(management_data["order_data"])
+        
+        if success:
+            await message.answer(
+                f"✅ Заказ успешно добавлен!\n\n"
+                f"👤 Ник: {management_data['order_data']['nickname']}\n"
+                f"🚘 Абонемент: {management_data['order_data']['subscription']}\n"
+                f"📅 Период: {management_data['order_data']['start']} - {management_data['order_data']['end']}\n"
+                f"🆔 ID заказа: {order_id}"
+            )
+        else:
+            await message.answer("❌ Ошибка при добавлении заказа")
+        
+        # Очищаем временные данные
+        admin_order_management.pop(user_id, None)
 
 async def handle_staff_management(message: Message, management_data):
     """Обработка ввода для управления сотрудниками"""
@@ -827,6 +1114,87 @@ async def handle_staff_management(message: Message, management_data):
 
         staff_management_data.pop(user_id, None)
 
+# --- Обработчики callback для управления заказами ---
+@dp.callback_query(F.data.startswith("admin_orders_page_"))
+async def handle_admin_orders_page(callback: CallbackQuery):
+    """Обработка переключения страниц заказов"""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещен")
+        return
+
+    try:
+        page = int(callback.data.replace("admin_orders_page_", ""))
+        await show_orders_page(callback.message, page)
+        await callback.answer()
+    except ValueError:
+        await callback.answer("❌ Ошибка пагинации")
+
+@dp.callback_query(F.data == "admin_all_orders_0")
+async def handle_admin_all_orders(callback: CallbackQuery):
+    """Обработка возврата к списку заказов"""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещен")
+        return
+
+    await show_orders_page(callback.message, 0)
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_add_order")
+async def handle_admin_add_order(callback: CallbackQuery):
+    """Обработка добавления заказа администратором"""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещен")
+        return
+
+    admin_order_management[callback.from_user.id] = {
+        "stage": "waiting_nickname",
+        "order_data": {
+            "user_id": 0,  # По умолчанию
+            "username_link": "Добавлено администратором"
+        }
+    }
+
+    await callback.message.answer(
+        "➕ Добавление нового заказа (администратор)\n\n"
+        "Введите игровой ник пользователя (в формате Name_Surname):"
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("admin_delete_order_"))
+async def handle_admin_delete_order(callback: CallbackQuery):
+    """Обработка запроса на удаление заказа"""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещен")
+        return
+
+    order_id = callback.data.replace("admin_delete_order_", "")
+    
+    await callback.message.answer(
+        f"⚠️ Вы уверены, что хотите удалить заказ {order_id}?",
+        reply_markup=admin_confirm_delete_keyboard(order_id)
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("admin_confirm_delete_"))
+async def handle_admin_confirm_delete(callback: CallbackQuery):
+    """Обработка подтверждения удаления заказа"""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещен")
+        return
+
+    order_id = callback.data.replace("admin_confirm_delete_", "")
+    
+    success = await delete_order_from_db(order_id)
+    
+    if success:
+        await callback.message.answer(f"✅ Заказ {order_id} успешно удален!")
+        # Возвращаемся к списку заказов
+        await show_orders_page(callback.message, 0)
+    else:
+        await callback.message.answer(f"❌ Ошибка при удалении заказа {order_id}")
+    
+    await callback.answer()
+
 # --- Остальные обработчики (заказы, поддержка, назначения) ---
 @dp.callback_query(F.data == "start_order")
 async def ask_nickname(callback: CallbackQuery):
@@ -886,6 +1254,30 @@ async def start_support(callback: CallbackQuery):
 @dp.callback_query(F.data.in_(["econom", "standard", "comfort", "premium"]))
 async def process_order(callback: CallbackQuery):
     user_id = callback.from_user.id
+    
+    # Проверяем, обычный ли это заказ или заказ от администратора
+    admin_order_entry = admin_order_management.get(user_id)
+    if admin_order_entry and admin_order_entry["stage"] == "waiting_subscription":
+        # Это заказ от администратора
+        subscription_names = {
+            "econom": "Эконом",
+            "standard": "Стандарт", 
+            "comfort": "Комфорт",
+            "premium": "Премиум"
+        }
+        
+        chosen = callback.data
+        admin_order_entry["order_data"]["subscription"] = subscription_names[chosen]
+        admin_order_entry["stage"] = "waiting_user_id"
+        
+        await callback.message.answer(
+            "✅ Абонемент выбран\n\n"
+            "Теперь введите User ID пользователя (числовой идентификатор) или 0 если неизвестно:"
+        )
+        await callback.answer()
+        return
+
+    # Обычный заказ пользователя
     data = player_data.get(user_id)
     if not data or data.get("stage") != "choose_subscription":
         await callback.answer("Сначала введи игровой ник /start", show_alert=True)
@@ -1187,6 +1579,10 @@ async def main():
     print("   /set_position - изменить должность")
     print("   /remove_staff - удалить сотрудника")
     print("   /list_staff - список сотрудников")
+    print("📋 Команды управления заказами (админы):")
+    print("   /all_orders - просмотреть все заказы")
+    print("   /add_order_admin - добавить заказ")
+    print("   /delete_order <ID> - удалить заказ")
 
     await dp.start_polling(bot)
 
