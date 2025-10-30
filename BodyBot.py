@@ -3,8 +3,7 @@ import uuid
 import re
 import html
 from datetime import datetime, timedelta
-import gspread
-from google.oauth2.service_account import Credentials
+import sqlite3
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -18,28 +17,11 @@ TOPIC_ORDERS = 81003
 TOPIC_SUPPORT = 81451
 ADMIN_IDS = [841285005]
 
-# Сотрудники будут загружаться из Google Sheets
-STAFF_MEMBERS = {}
+# База данных SQLite
+DB_PATH = 'kingsman_bot.db'
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
-# --- Настройки Google Sheets ---
-SERVICE_ACCOUNT_FILE = 'service_account.json'
-SPREADSHEET_NAME = 'Kingsman Rent Orders'
-
-SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive',
-]
-
-# Глобальные переменные
-creds = None
-gc = None
-worksheet_orders = None
-worksheet_assignments = None
-worksheet_staff = None
-sheets_enabled = False
 
 # Временные данные (только для текущей сессии)
 player_data = {}
@@ -47,107 +29,124 @@ support_requests = []
 order_confirmations = {}  # Для хранения подтверждений
 staff_management_data = {}  # Для управления сотрудниками
 
-
-# --- Инициализация Google Sheets ---
-def init_google_sheets():
-    """Инициализация Google Sheets"""
-    global creds, gc, worksheet_orders, worksheet_assignments, worksheet_staff, sheets_enabled
+# --- Инициализация базы данных SQLite ---
+def init_database():
+    """Инициализация базы данных SQLite"""
     try:
-        creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-        gc = gspread.authorize(creds)
-
-        # Открываем таблицу
-        spreadsheet = gc.open(SPREADSHEET_NAME)
-
-        # Лист заказов
-        try:
-            worksheet_orders = spreadsheet.worksheet("Orders")
-        except gspread.WorksheetNotFound:
-            worksheet_orders = spreadsheet.add_worksheet(title="Orders", rows="1000", cols="20")
-            headers = [
-                "ID", "User ID", "Nickname", "Username Link",
-                "Subscription", "Start Date", "End Date", "Created At", "Status"
-            ]
-            worksheet_orders.append_row(headers)
-
-        # Лист назначений сотрудников
-        try:
-            worksheet_assignments = spreadsheet.worksheet("Assignments")
-        except gspread.WorksheetNotFound:
-            worksheet_assignments = spreadsheet.add_worksheet(title="Assignments", rows="1000", cols="20")
-            headers = [
-                "Order ID", "Staff ID", "Staff Name", "Staff Username",
-                "Assigned At", "Status"
-            ]
-            worksheet_assignments.append_row(headers)
-
-        # Лист сотрудников
-        try:
-            worksheet_staff = spreadsheet.worksheet("Staff")
-        except gspread.WorksheetNotFound:
-            worksheet_staff = spreadsheet.add_worksheet(title="Staff", rows="1000", cols="20")
-            headers = [
-                "User ID", "Name", "Username", "Position",
-                "Added At", "Added By", "Status"
-            ]
-            worksheet_staff.append_row(headers)
-            # Добавляем главного администратора по умолчанию
-            worksheet_staff.append_row([
-                841285005, "Denis_Kingsman", "admin", "Администратор",
-                datetime.now().strftime("%d.%m.%Y %H:%M"), "system", "active"
-            ])
-
-        sheets_enabled = True
-        print("✅ Google Sheets успешно инициализирована")
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Таблица сотрудников
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS staff (
+                user_id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                username TEXT,
+                position TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                added_by TEXT NOT NULL,
+                status TEXT DEFAULT 'active'
+            )
+        ''')
+        
+        # Таблица заказов
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS orders (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                nickname TEXT NOT NULL,
+                username_link TEXT NOT NULL,
+                subscription TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT DEFAULT 'pending'
+            )
+        ''')
+        
+        # Таблица назначений
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS assignments (
+                order_id TEXT PRIMARY KEY,
+                staff_id INTEGER NOT NULL,
+                staff_name TEXT NOT NULL,
+                staff_username TEXT NOT NULL,
+                assigned_at TEXT NOT NULL,
+                status TEXT DEFAULT 'in_progress',
+                FOREIGN KEY (order_id) REFERENCES orders (id)
+            )
+        ''')
+        
+        # Добавляем главного администратора по умолчанию
+        cursor.execute('''
+            INSERT OR IGNORE INTO staff (user_id, name, username, position, added_at, added_by, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            841285005, 
+            "Denis_Kingsman", 
+            "admin", 
+            "Администратор",
+            datetime.now().strftime("%d.%m.%Y %H:%M"), 
+            "system", 
+            "active"
+        ))
+        
+        conn.commit()
+        conn.close()
+        print("✅ База данных SQLite успешно инициализирована")
         return True
-
+        
     except Exception as e:
-        print(f"❌ Ошибка инициализации Google Sheets: {e}")
+        print(f"❌ Ошибка инициализации базы данных: {e}")
         return False
 
-
-# --- Загрузка сотрудников из Google Sheets ---
-async def load_staff_from_sheets():
-    """Загрузка сотрудников из Google Sheets"""
-    global STAFF_MEMBERS
+# --- Загрузка сотрудников из базы данных ---
+async def load_staff_from_db():
+    """Загрузка сотрудников из базы данных"""
     try:
-        if not sheets_enabled:
-            print("❌ Google Sheets не инициализирована")
-            return {}
-
-        all_records = worksheet_staff.get_all_records()
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT user_id, name, username, position FROM staff WHERE status = "active"')
+        staff_rows = cursor.fetchall()
+        
         staff_members = {}
-
-        for record in all_records:
-            if record.get("User ID") and record.get("Status") == "active":
-                user_id = int(record["User ID"])
-                staff_members[user_id] = {
-                    "name": record["Name"],
-                    "username": record.get("Username", ""),
-                    "position": record.get("Position", "Сотрудник")
-                }
-
-        STAFF_MEMBERS = staff_members
-        print(f"✅ Загружено {len(STAFF_MEMBERS)} сотрудников из Google Sheets")
+        for row in staff_rows:
+            user_id, name, username, position = row
+            staff_members[user_id] = {
+                "name": name,
+                "username": username,
+                "position": position
+            }
+        
+        conn.close()
+        print(f"✅ Загружено {len(staff_members)} сотрудников из базы данных")
         return staff_members
+        
     except Exception as e:
         print(f"❌ Ошибка при загрузке сотрудников: {e}")
         return {}
-
 
 # --- Работа с сотрудниками ---
 async def add_staff_member(user_id, name, username, position, added_by):
     """Добавление нового сотрудника"""
     try:
-        if not sheets_enabled:
-            return False, "❌ Google Sheets не подключена"
-
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
         # Проверяем, существует ли уже сотрудник
-        existing_staff = await get_staff_member(user_id)
+        cursor.execute('SELECT user_id FROM staff WHERE user_id = ?', (user_id,))
+        existing_staff = cursor.fetchone()
+        
         if existing_staff:
+            conn.close()
             return False, f"❌ Сотрудник с ID {user_id} уже существует"
-
-        worksheet_staff.append_row([
+        
+        # Добавляем нового сотрудника
+        cursor.execute('''
+            INSERT INTO staff (user_id, name, username, position, added_at, added_by, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
             user_id,
             name,
             username,
@@ -155,72 +154,99 @@ async def add_staff_member(user_id, name, username, position, added_by):
             datetime.now().strftime("%d.%m.%Y %H:%M"),
             added_by,
             "active"
-        ])
-
+        ))
+        
+        conn.commit()
+        conn.close()
+        
         # Обновляем кэш
-        await load_staff_from_sheets()
-
+        global STAFF_MEMBERS
+        STAFF_MEMBERS = await load_staff_from_db()
+        
         return True, f"✅ Сотрудник {name} (@{username}) успешно добавлен как {position}"
+        
     except Exception as e:
         print(f"❌ Ошибка при добавлении сотрудника: {e}")
         return False, f"❌ Ошибка при добавлении сотрудника: {e}"
 
-
 async def update_staff_position(user_id, new_position, updated_by):
     """Обновление должности сотрудника"""
     try:
-        if not sheets_enabled:
-            return False, "❌ Google Sheets не подключена"
-
-        cell = worksheet_staff.find(str(user_id))
-        if not cell:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Проверяем существование сотрудника
+        cursor.execute('SELECT name FROM staff WHERE user_id = ?', (user_id,))
+        staff_info = cursor.fetchone()
+        
+        if not staff_info:
+            conn.close()
             return False, f"❌ Сотрудник с ID {user_id} не найден"
-
-        # Обновляем должность (столбец D, индекс 4)
-        worksheet_staff.update_cell(cell.row, 4, new_position)
-
+        
+        # Обновляем должность
+        cursor.execute('''
+            UPDATE staff SET position = ? WHERE user_id = ?
+        ''', (new_position, user_id))
+        
+        conn.commit()
+        conn.close()
+        
         # Обновляем кэш
-        await load_staff_from_sheets()
-
+        global STAFF_MEMBERS
+        STAFF_MEMBERS = await load_staff_from_db()
+        
         staff_name = STAFF_MEMBERS.get(user_id, {}).get("name", "Неизвестный")
         return True, f"✅ Должность сотрудника {staff_name} изменена на: {new_position}"
+        
     except Exception as e:
         print(f"❌ Ошибка при обновлении должности: {e}")
         return False, f"❌ Ошибка при обновлении должности: {e}"
 
-
 async def remove_staff_member(user_id, removed_by):
     """Удаление сотрудника"""
     try:
-        if not sheets_enabled:
-            return False, "❌ Google Sheets не подключена"
-
-        cell = worksheet_staff.find(str(user_id))
-        if not cell:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Проверяем существование сотрудника
+        cursor.execute('SELECT name FROM staff WHERE user_id = ?', (user_id,))
+        staff_info = cursor.fetchone()
+        
+        if not staff_info:
+            conn.close()
             return False, f"❌ Сотрудник с ID {user_id} не найден"
-
-        # Помечаем как неактивного (столбец G, индекс 7)
-        worksheet_staff.update_cell(cell.row, 7, "inactive")
-
+        
+        # Помечаем как неактивного
+        cursor.execute('''
+            UPDATE staff SET status = 'inactive' WHERE user_id = ?
+        ''', (user_id,))
+        
+        conn.commit()
+        conn.close()
+        
         # Обновляем кэш
-        await load_staff_from_sheets()
-
+        global STAFF_MEMBERS
+        STAFF_MEMBERS = await load_staff_from_db()
+        
         staff_name = STAFF_MEMBERS.get(user_id, {}).get("name", "Неизвестный")
         return True, f"✅ Сотрудник {staff_name} удален из системы"
+        
     except Exception as e:
         print(f"❌ Ошибка при удалении сотрудника: {e}")
         return False, f"❌ Ошибка при удалении сотрудника: {e}"
 
-
 async def get_staff_member(user_id):
     """Получение информации о сотруднике"""
     try:
-        if not sheets_enabled:
-            return None
-
-        cell = worksheet_staff.find(str(user_id))
-        if cell:
-            row = worksheet_staff.row_values(cell.row)
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM staff WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        
+        conn.close()
+        
+        if row:
             return {
                 "user_id": row[0],
                 "name": row[1],
@@ -231,49 +257,53 @@ async def get_staff_member(user_id):
                 "status": row[6]
             }
         return None
+        
     except Exception as e:
         print(f"❌ Ошибка при получении сотрудника: {e}")
         return None
 
-
 # --- Работа с заказами ---
 async def get_all_orders():
-    """Получение всех заказов из Google Sheets"""
+    """Получение всех заказов из базы данных"""
     try:
-        if not sheets_enabled:
-            print("❌ Google Sheets не инициализирована")
-            return []
-
-        all_records = worksheet_orders.get_all_records()
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM orders')
+        order_rows = cursor.fetchall()
+        
         orders = []
-
-        for record in all_records:
-            if record.get("ID"):
-                orders.append({
-                    "id": record["ID"],
-                    "user_id": int(record["User ID"]),
-                    "nickname": record["Nickname"],
-                    "username_link": record["Username Link"],
-                    "subscription": record["Subscription"],
-                    "start": record["Start Date"],
-                    "end": record["End Date"],
-                    "status": record.get("Status", "pending")
-                })
-
-        print(f"✅ Загружено {len(orders)} заказов из Google Sheets")
+        for row in order_rows:
+            orders.append({
+                "id": row[0],
+                "user_id": row[1],
+                "nickname": row[2],
+                "username_link": row[3],
+                "subscription": row[4],
+                "start": row[5],
+                "end": row[6],
+                "created_at": row[7],
+                "status": row[8]
+            })
+        
+        conn.close()
+        print(f"✅ Загружено {len(orders)} заказов из базы данных")
         return orders
+        
     except Exception as e:
         print(f"❌ Ошибка при загрузке заказов: {e}")
         return []
 
-
-async def save_order_to_sheets(order_data):
-    """Сохранение заказа в Google Sheets"""
+async def save_order_to_db(order_data):
+    """Сохранение заказа в базу данных"""
     try:
-        if not sheets_enabled:
-            return False
-
-        worksheet_orders.append_row([
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO orders (id, user_id, nickname, username_link, subscription, start_date, end_date, created_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
             order_data["id"],
             order_data["user_id"],
             order_data["nickname"],
@@ -282,66 +312,79 @@ async def save_order_to_sheets(order_data):
             order_data["start"],
             order_data["end"],
             datetime.now().strftime("%d.%m.%Y %H:%M"),
-            "pending"  # Статус по умолчанию
-        ])
-
-        print(f"✅ Заказ {order_data['id']} сохранен в Google Sheets")
+            "pending"
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Заказ {order_data['id']} сохранен в базу данных")
         return True
+        
     except Exception as e:
         print(f"❌ Ошибка при сохранении заказа: {e}")
         return False
 
-
 async def update_order_status(order_id, status):
     """Обновление статуса заказа"""
     try:
-        if not sheets_enabled:
-            return False
-
-        cell = worksheet_orders.find(order_id)
-        if cell:
-            # Обновляем статус (столбец I, индекс 8)
-            worksheet_orders.update_cell(cell.row, 9, status)
-            print(f"✅ Статус заказа {order_id} обновлен на: {status}")
-            return True
-        return False
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE orders SET status = ? WHERE id = ?
+        ''', (status, order_id))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Статус заказа {order_id} обновлен на: {status}")
+        return True
+        
     except Exception as e:
         print(f"❌ Ошибка при обновлении статуса: {e}")
         return False
 
-
 async def assign_order_to_staff(order_id, staff_id, staff_name, staff_username):
     """Назначение заказа сотруднику"""
     try:
-        if not sheets_enabled:
-            return False
-
-        worksheet_assignments.append_row([
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO assignments (order_id, staff_id, staff_name, staff_username, assigned_at, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
             order_id,
             staff_id,
             staff_name,
             staff_username,
             datetime.now().strftime("%d.%m.%Y %H:%M"),
             "in_progress"
-        ])
-
+        ))
+        
+        conn.commit()
+        conn.close()
+        
         print(f"✅ Заказ {order_id} назначен сотруднику {staff_name} (@{staff_username})")
         return True
+        
     except Exception as e:
         print(f"❌ Ошибка при назначении заказа: {e}")
         return False
 
-
 async def get_order_assignment(order_id):
     """Получение информации о назначении заказа"""
     try:
-        if not sheets_enabled:
-            return None
-
-        cell = worksheet_assignments.find(order_id)
-        if cell:
-            # Получаем всю строку назначения
-            row = worksheet_assignments.row_values(cell.row)
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM assignments WHERE order_id = ?', (order_id,))
+        row = cursor.fetchone()
+        
+        conn.close()
+        
+        if row:
             return {
                 "order_id": row[0],
                 "staff_id": row[1],
@@ -351,10 +394,10 @@ async def get_order_assignment(order_id):
                 "status": row[5]
             }
         return None
+        
     except Exception as e:
         print(f"❌ Ошибка при получении назначения: {e}")
         return None
-
 
 async def get_user_active_orders(user_id):
     """Получение активных заказов пользователя"""
@@ -377,7 +420,6 @@ async def get_user_active_orders(user_id):
     except Exception as e:
         print(f"❌ Ошибка при получении заказов пользователя: {e}")
         return []
-
 
 async def can_user_create_order(user_id, username_link):
     """Проверяет, может ли пользователь создать новый заказ"""
@@ -425,7 +467,6 @@ async def can_user_create_order(user_id, username_link):
         print(f"❌ Ошибка при проверке возможности создания заказа: {e}")
         return True, None
 
-
 def validate_nickname(nickname):
     """Проверяет формат ника: должен содержать нижнее подчеркивание"""
     if "_" not in nickname:
@@ -443,14 +484,12 @@ def validate_nickname(nickname):
 
     return True, "✅ Формат ника правильный!"
 
-
 # --- Клавиатуры ---
 def start_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📝 Оформить заказ", callback_data="start_order")],
         [InlineKeyboardButton(text="🛠 Техническая поддержка", callback_data="support_start")]
     ])
-
 
 def subscription_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -459,7 +498,6 @@ def subscription_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🚙 Комфорт", callback_data="comfort")],
         [InlineKeyboardButton(text="🏎 Премиум", callback_data="premium")]
     ])
-
 
 def confirmation_keyboard(order_id) -> InlineKeyboardMarkup:
     """Клавиатура подтверждения заказа"""
@@ -470,7 +508,6 @@ def confirmation_keyboard(order_id) -> InlineKeyboardMarkup:
         ]
     ])
 
-
 def staff_actions_keyboard(order_id) -> InlineKeyboardMarkup:
     """Клавиатура действий для сотрудников - ПРОСТО КНОПКА ВЗЯТЬ ЗАКАЗ"""
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -479,9 +516,6 @@ def staff_actions_keyboard(order_id) -> InlineKeyboardMarkup:
             callback_data=f"take_order_{order_id}"
         )]
     ])
-
-
-
 
 # --- Команды бота ---
 @dp.message(Command("start"))
@@ -493,14 +527,14 @@ async def cmd_start(message: Message):
         reply_markup=start_keyboard()
     )
 
-
 @dp.message(Command("status"))
 async def cmd_status(message: Message):
     """Команда статуса бота - работает для всех"""
     print(f"🔧 Получена команда /status от пользователя {message.from_user.id}")
 
-    # Получаем статистику напрямую из Google Sheets
+    # Получаем статистику из базы данных
     orders = await get_all_orders()
+    staff_members = await load_staff_from_db()
 
     # Считаем статистику
     today = datetime.now().date()
@@ -521,7 +555,7 @@ async def cmd_status(message: Message):
         except ValueError:
             continue
 
-    storage_type = "Google Sheets" if sheets_enabled else "❌ Не подключена"
+    storage_type = "✅ SQLite Database"
 
     # Базовая информация для всех пользователей
     status_text = (
@@ -529,7 +563,7 @@ async def cmd_status(message: Message):
         f"📊 Всего заказов: {len(orders)}\n"
         f"🟢 Активных абонементов: {active_orders}\n"
         f"💾 Хранилище: {storage_type}\n"
-        f"👥 Сотрудников: {len(STAFF_MEMBERS)}"
+        f"👥 Сотрудников: {len(staff_members)}"
     )
 
     # Дополнительная информация для администраторов
@@ -540,7 +574,6 @@ async def cmd_status(message: Message):
 
     await message.answer(status_text)
     print(f"✅ Отправлен статус пользователю {message.from_user.id}")
-
 
 # --- Команды управления сотрудниками ---
 @dp.message(Command("add_staff"))
@@ -563,7 +596,6 @@ async def cmd_add_staff(message: Message):
         "2. Скопируйте его User ID из ответа"
     )
 
-
 @dp.message(Command("set_position"))
 async def cmd_set_position(message: Message):
     """Изменение должности сотрудника - начало процесса"""
@@ -580,7 +612,6 @@ async def cmd_set_position(message: Message):
         "✏️ Изменение должности сотрудника\n\n"
         "Введите User ID сотрудника (числовой идентификатор):"
     )
-
 
 @dp.message(Command("remove_staff"))
 async def cmd_remove_staff(message: Message):
@@ -599,7 +630,6 @@ async def cmd_remove_staff(message: Message):
         "Введите User ID сотрудника (числовой идентификатор):"
     )
 
-
 @dp.message(Command("list_staff"))
 async def cmd_list_staff(message: Message):
     """Показать список всех сотрудников"""
@@ -607,12 +637,14 @@ async def cmd_list_staff(message: Message):
         await message.answer("❌ Эта команда только для администраторов.")
         return
 
-    if not STAFF_MEMBERS:
+    staff_members = await load_staff_from_db()
+    
+    if not staff_members:
         await message.answer("📭 В системе нет сотрудников.")
         return
 
     staff_list = "👥 Список сотрудников:\n\n"
-    for i, (user_id, staff_data) in enumerate(STAFF_MEMBERS.items(), 1):
+    for i, (user_id, staff_data) in enumerate(staff_members.items(), 1):
         username_display = f"@{staff_data['username']}" if staff_data['username'] else "нет username"
         staff_list += (
             f"{i}. 👤 {staff_data['name']}\n"
@@ -622,7 +654,6 @@ async def cmd_list_staff(message: Message):
         )
 
     await message.answer(staff_list)
-
 
 # --- Обработка ввода для управления сотрудниками ---
 @dp.message(F.text)
@@ -710,7 +741,6 @@ async def handle_text(message: Message):
         await message.answer("✅ Спасибо! Ваше обращение отправлено, ожидайте ответа.")
         player_data.pop(user_id, None)
 
-
 async def handle_staff_management(message: Message, management_data):
     """Обработка ввода для управления сотрудниками"""
     user_id = message.from_user.id
@@ -797,7 +827,6 @@ async def handle_staff_management(message: Message, management_data):
 
         staff_management_data.pop(user_id, None)
 
-
 # --- Остальные обработчики (заказы, поддержка, назначения) ---
 @dp.callback_query(F.data == "start_order")
 async def ask_nickname(callback: CallbackQuery):
@@ -827,12 +856,11 @@ async def ask_nickname(callback: CallbackQuery):
     )
     await callback.answer()
 
-
 @dp.callback_query(F.data == "support_start")
 async def start_support(callback: CallbackQuery):
     user_id = callback.from_user.id
 
-    # Получаем активные заказы пользователя напрямую из Google Sheets
+    # Получаем активные заказы пользователя напрямую из базы данных
     active_orders = await get_user_active_orders(user_id)
 
     if not active_orders:
@@ -855,7 +883,6 @@ async def start_support(callback: CallbackQuery):
     )
     await callback.answer()
 
-
 @dp.callback_query(F.data.in_(["econom", "standard", "comfort", "premium"]))
 async def process_order(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -877,6 +904,7 @@ async def process_order(callback: CallbackQuery):
 
     # Финальная проверка перед сохранением
     can_create, message_text = await can_user_create_order(user_id, username_link)
+
     if not can_create:
         await callback.message.answer(message_text)
         await callback.answer()
@@ -912,7 +940,6 @@ async def process_order(callback: CallbackQuery):
     )
     await callback.answer()
 
-
 # --- Обработка подтверждения заказа ---
 @dp.callback_query(F.data.startswith("confirm_"))
 async def confirm_order(callback: CallbackQuery):
@@ -924,8 +951,8 @@ async def confirm_order(callback: CallbackQuery):
 
     order_data = order_confirmations[order_id]
 
-    # Сохраняем заказ в Google Sheets
-    success = await save_order_to_sheets({
+    # Сохраняем заказ в базу данных
+    success = await save_order_to_db({
         "id": order_id,
         "user_id": order_data["user_id"],
         "nickname": order_data["nickname"],
@@ -972,7 +999,6 @@ async def confirm_order(callback: CallbackQuery):
     del order_confirmations[order_id]
     await callback.answer()
 
-
 @dp.callback_query(F.data.startswith("cancel_"))
 async def cancel_order(callback: CallbackQuery):
     order_id = callback.data.replace("cancel_", "")
@@ -983,21 +1009,23 @@ async def cancel_order(callback: CallbackQuery):
     await callback.message.edit_text("❌ Заказ отменен")
     await callback.answer()
 
-
 # --- Обработка взятия заказа сотрудником ---
 @dp.callback_query(F.data.startswith("take_order_"))
 async def take_order(callback: CallbackQuery):
     """Новый обработчик взятия заказа сотрудником"""
+    # Загружаем актуальный список сотрудников
+    staff_members = await load_staff_from_db()
+    
     # Проверяем, является ли пользователь сотрудником
     staff_id = callback.from_user.id
-    if staff_id not in STAFF_MEMBERS:
+    if staff_id not in staff_members:
         await callback.answer("❌ Только для сотрудников", show_alert=True)
         return
 
     order_id = callback.data.replace("take_order_", "")
 
     # Получаем данные сотрудника
-    staff_data = STAFF_MEMBERS.get(staff_id, {})
+    staff_data = staff_members.get(staff_id, {})
     staff_name = staff_data.get("name", "Неизвестный сотрудник")
     staff_username = staff_data.get("username", "")
 
@@ -1035,18 +1063,18 @@ async def take_order(callback: CallbackQuery):
 
     await callback.answer(f"✅ Вы взяли заказ {order_id} в работу")
 
-
 # --- Другие команды ---
 @dp.message(Command("getid"))
 async def cmd_getid(message: Message):
     await message.answer(f"Chat ID: {message.chat.id}\nUser ID: {message.from_user.id}")
 
-
 @dp.message(Command("myid"))
 async def cmd_myid(message: Message):
     user_id = message.from_user.id
+    staff_members = await load_staff_from_db()
+    
     is_admin = user_id in ADMIN_IDS
-    is_staff = user_id in STAFF_MEMBERS
+    is_staff = user_id in staff_members
     admin_status = "✅ Администратор" if is_admin else "❌ Не администратор"
     staff_status = "✅ Сотрудник" if is_staff else "❌ Не сотрудник"
 
@@ -1056,7 +1084,6 @@ async def cmd_myid(message: Message):
         f"👨‍💼 Роль: {staff_status}\n"
         f"📋 ID администраторов: {ADMIN_IDS}"
     )
-
 
 @dp.message(Command("my_orders"))
 async def cmd_my_orders(message: Message):
@@ -1080,18 +1107,22 @@ async def cmd_my_orders(message: Message):
 
     await message.answer(orders_text)
 
-
 @dp.message(Command("staff_orders"))
 async def cmd_staff_orders(message: Message):
-    """Показать заказы в работе у сотрудника"""
+    """Показать заказы в работе у сотрудников"""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ Эта команда только для сотрудников.")
         return
 
     try:
-        # Получаем все назначения
-        all_records = worksheet_assignments.get_all_records()
-        active_assignments = [r for r in all_records if r.get("Status") == "in_progress"]
+        # Получаем все назначения из базы данных
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM assignments WHERE status = "in_progress"')
+        active_assignments = cursor.fetchall()
+        
+        conn.close()
 
         if not active_assignments:
             await message.answer("📭 Нет заказов в работе.")
@@ -1099,12 +1130,11 @@ async def cmd_staff_orders(message: Message):
 
         assignments_text = "👨‍💼 Заказы в работе:\n\n"
         for i, assignment in enumerate(active_assignments, 1):
-            staff_info = f"@{assignment['Staff Username']}" if assignment.get('Staff Username') else assignment[
-                'Staff Name']
+            staff_info = f"@{assignment[3]}" if assignment[3] else assignment[2]
             assignments_text += (
-                f"{i}. 🆔 {assignment['Order ID']}\n"
+                f"{i}. 🆔 {assignment[0]}\n"
                 f"   👤 Сотрудник: {staff_info}\n"
-                f"   ⏰ Взят: {assignment['Assigned At']}\n\n"
+                f"   ⏰ Взят: {assignment[4]}\n\n"
             )
 
         await message.answer(assignments_text)
@@ -1112,58 +1142,53 @@ async def cmd_staff_orders(message: Message):
     except Exception as e:
         await message.answer(f"❌ Ошибка при получении данных: {e}")
 
-
 @dp.message(Command("debug_orders"))
 async def cmd_debug_orders(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ Эта команда только для администраторов.")
         return
 
-    # Получаем заказы напрямую из Google Sheets
+    # Получаем заказы напрямую из базы данных
     orders = await get_all_orders()
 
     if not orders:
-        await message.answer("📭 Нет заказов в Google Sheets.")
+        await message.answer("📭 Нет заказов в базе данных.")
         return
 
     orders_list = "\n".join(
         [f"🆔 {o['id']} | 👤 {o['nickname']} | 🚘 {o['subscription']} | 📅 до {o['end']} | 📊 {o['status']}" for o in
          orders])
     await message.answer(
-        f"📊 Всего заказов в Google Sheets: {len(orders)}\n\n{orders_list}"
+        f"📊 Всего заказов в базе данных: {len(orders)}\n\n{orders_list}"
     )
-
 
 # --- Запуск ---
 async def main():
     print("🤖 Запуск бота он просыпается уже...")
 
-    # Инициализация Google Sheets
-    if not init_google_sheets():
-        print("❌ Критическая ошибка: Не удалось подключиться к Google Sheets!")
-        print("📝 Бот не может работать без подключения к Google Sheets")
+    # Инициализация базы данных SQLite
+    if not init_database():
+        print("❌ Критическая ошибка: Не удалось инициализировать базу данных!")
         return
 
     # Загружаем сотрудников
-    await load_staff_from_sheets()
+    staff_members = await load_staff_from_db()
 
     # Проверяем подключение
     test_orders = await get_all_orders()
-    print(f"✅ Подключение установлено. Заказов в таблице: {len(test_orders)}")
-    print(f"👥 Сотрудников в системе: {len(STAFF_MEMBERS)}")
+    print(f"✅ Подключение установлено. Заказов в базе: {len(test_orders)}")
+    print(f"👥 Сотрудников в системе: {len(staff_members)}")
 
     print("✅ Бот запущен и готов к работе, проснулся xD")
-    print("💡 Режим: Прямая работа с Google Sheets")
+    print("💡 Режим: SQLite Database")
     print("🔧 Доступные команды: /start, /status, /my_orders, /staff")
     print("👥 Команды управления сотрудниками:")
-    print("   /staff - меню управления сотрудниками")
     print("   /add_staff - добавить сотрудника")
     print("   /set_position - изменить должность")
     print("   /remove_staff - удалить сотрудника")
     print("   /list_staff - список сотрудников")
 
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     try:
