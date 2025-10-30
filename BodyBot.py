@@ -31,7 +31,200 @@ order_confirmations = {}  # Для хранения подтверждений
 staff_management_data = {}  # Для управления сотрудниками
 admin_order_management = {}  # Для управления заказами админами
 
+# Добавим новую переменную для управления удалением заказов
+order_deletion_data = {}
 
+# --- Новые функции для управления заказами ---
+async def get_orders_keyboard(page: int = 0, orders_per_page: int = 10):
+    """Создает клавиатуру для выбора заказа с пагинацией"""
+    orders = await get_all_orders()
+    
+    if not orders:
+        return None, "📭 В системе нет заказов."
+    
+    # Сортируем заказы по дате создания (новые сначала)
+    orders.sort(key=lambda x: datetime.strptime(x['created_at'], "%d.%m.%Y %H:%M"), reverse=True)
+    
+    # Вычисляем диапазон для текущей страницы
+    start_idx = page * orders_per_page
+    end_idx = start_idx + orders_per_page
+    page_orders = orders[start_idx:end_idx]
+    
+    keyboard = []
+    
+    # Добавляем кнопки для каждого заказа на странице
+    for order in page_orders:
+        button_text = f"🆔 {order['id']} | 👤 {order['nickname']} | 🚘 {order['subscription']}"
+        # Обрезаем текст если слишком длинный
+        if len(button_text) > 50:
+            button_text = button_text[:47] + "..."
+        keyboard.append([InlineKeyboardButton(
+            text=button_text,
+            callback_data=f"select_order_{order['id']}"
+        )])
+    
+    # Добавляем кнопки пагинации
+    pagination_buttons = []
+    if page > 0:
+        pagination_buttons.append(InlineKeyboardButton(
+            text="⬅️ Назад", 
+            callback_data=f"orders_page_{page-1}"
+        ))
+    
+    if len(orders) > end_idx:
+        pagination_buttons.append(InlineKeyboardButton(
+            text="Вперед ➡️", 
+            callback_data=f"orders_page_{page+1}"
+        ))
+    
+    if pagination_buttons:
+        keyboard.append(pagination_buttons)
+    
+    # Добавляем кнопку отмены
+    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_deletion")])
+    
+    # Формируем текст с информацией о странице
+    total_pages = (len(orders) + orders_per_page - 1) // orders_per_page
+    page_info = f"Страница {page + 1} из {total_pages}\nВыберите заказ для удаления:"
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard), page_info
+
+def get_order_details_keyboard(order_id: str):
+    """Создает клавиатуру с действиями для выбранного заказа"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Подтвердить удаление", callback_data=f"confirm_delete_{order_id}"),
+            InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_deletion")
+        ]
+    ])
+
+# --- Команда для удаления заказа с выбором ---
+@dp.message(Command("delete_order"))
+async def cmd_delete_order(message: Message):
+    """Начало процесса удаления заказа с выбором из списка"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Эта команда только для администраторов.")
+        return
+    
+    # Создаем клавиатуру с заказами
+    keyboard, page_info = await get_orders_keyboard()
+    
+    if not keyboard:
+        await message.answer(page_info)
+        return
+    
+    await message.answer(
+        f"🗑️ <b>Удаление заказа</b>\n\n{page_info}",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+# --- Обработчики callback для удаления заказов ---
+@dp.callback_query(F.data.startswith("orders_page_"))
+async def handle_orders_page(callback: CallbackQuery):
+    """Обработка переключения страниц с заказами"""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещен")
+        return
+    
+    try:
+        page = int(callback.data.replace("orders_page_", ""))
+        keyboard, page_info = await get_orders_keyboard(page)
+        
+        if not keyboard:
+            await callback.message.edit_text(page_info)
+            return
+        
+        await callback.message.edit_text(
+            f"🗑️ <b>Удаление заказа</b>\n\n{page_info}",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        await callback.answer()
+    except ValueError:
+        await callback.answer("❌ Ошибка пагинации")
+
+@dp.callback_query(F.data.startswith("select_order_"))
+async def handle_select_order(callback: CallbackQuery):
+    """Обработка выбора заказа для удаления"""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещен")
+        return
+    
+    order_id = callback.data.replace("select_order_", "")
+    
+    # Получаем информацию о заказе
+    orders = await get_all_orders()
+    selected_order = None
+    
+    for order in orders:
+        if order['id'] == order_id:
+            selected_order = order
+            break
+    
+    if not selected_order:
+        await callback.answer("❌ Заказ не найден")
+        return
+    
+    # Формируем детальную информацию о заказе
+    order_info = (
+        f"📋 <b>Информация о заказе:</b>\n\n"
+        f"🆔 <b>ID:</b> {selected_order['id']}\n"
+        f"👤 <b>Ник:</b> {selected_order['nickname']}\n"
+        f"🔗 <b>Ссылка:</b> {selected_order['username_link']}\n"
+        f"🚘 <b>Абонемент:</b> {selected_order['subscription']}\n"
+        f"📅 <b>Начало:</b> {selected_order['start']}\n"
+        f"📆 <b>Окончание:</b> {selected_order['end']}\n"
+        f"📊 <b>Статус:</b> {selected_order['status']}\n"
+        f"🕐 <b>Создан:</b> {selected_order['created_at']}\n\n"
+        f"⚠️ <b>Вы уверены, что хотите удалить этот заказ?</b>"
+    )
+    
+    await callback.message.edit_text(
+        order_info,
+        reply_markup=get_order_details_keyboard(order_id),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("confirm_delete_"))
+async def handle_confirm_delete(callback: CallbackQuery):
+    """Обработка подтверждения удаления заказа"""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещен")
+        return
+    
+    order_id = callback.data.replace("confirm_delete_", "")
+    
+    # Удаляем заказ из базы данных
+    success = await delete_order_from_db(order_id)
+    
+    if success:
+        await callback.message.edit_text(
+            f"✅ Заказ <b>{order_id}</b> успешно удален!",
+            parse_mode="HTML"
+        )
+        
+        # Логируем действие
+        admin_name = callback.from_user.username or callback.from_user.first_name
+        print(f"✅ Администратор {admin_name} удалил заказ {order_id}")
+    else:
+        await callback.message.edit_text(
+            f"❌ Ошибка при удалении заказа <b>{order_id}</b>",
+            parse_mode="HTML"
+        )
+    
+    await callback.answer()
+
+@dp.callback_query(F.data == "cancel_deletion")
+async def handle_cancel_deletion(callback: CallbackQuery):
+    """Обработка отмены удаления"""
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Доступ запрещен")
+        return
+    
+    await callback.message.edit_text("❌ Удаление заказа отменено.")
+    await callback.answer()
 # --- Инициализация базы данных SQLite ---
 def init_database():
     """Инициализация базы данных SQLite"""
@@ -1679,4 +1872,5 @@ if __name__ == "__main__":
         print("❌ Бот остановлен пользователем")
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
+
 
