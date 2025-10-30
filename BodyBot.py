@@ -1860,17 +1860,10 @@ async def main():
     print("📋 Команды управления заказами (админы):")
     print("   /all_orders - просмотреть все заказы")
     print("   /add_order_admin - добавить заказ")
-    print("   /delete_order <ID> - удалить заказ")
+    print("   /delete_order - удалить заказ (интерактивный выбор)")
+    print("   /delete_order <ID> - удалить заказ по ID")
 
     await dp.start_polling(bot)
 
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("❌ Бот остановлен пользователем")
-    except Exception as e:
-        print(f"❌ Критическая ошибка: {e}")
 
 
