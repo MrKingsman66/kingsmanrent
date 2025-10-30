@@ -11,7 +11,7 @@ from aiogram.types import (
 )
 
 # 🔧 Настройки
-BOT_TOKEN = "8148697332:AAGy6r-GNzqVYabKCQIlfQI-gCkbelQucFM"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_ID = -1002773883024
 TOPIC_ORDERS = 81003
 TOPIC_SUPPORT = 81451
@@ -1619,4 +1619,5 @@ if __name__ == "__main__":
         print("❌ Бот остановлен пользователем")
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
+
 
